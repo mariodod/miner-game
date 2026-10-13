@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { GameState } from '../core/GameState';
 import { PICKAXES_CONFIG, PickaxeId } from '../config/pickaxes';
 import { SKINS_CONFIG } from '../config/economy';
+import { Sound } from '../core/SoundManager';
 
 type ShopTab = 'pickaxes' | 'skins';
 
@@ -43,7 +44,10 @@ export class ShopScene extends Phaser.Scene {
       })
       .setOrigin(0, 0.5)
       .setInteractive({ useHandCursor: true });
-    backBtn.on('pointerdown', () => this.scene.start('MenuScene'));
+    backBtn.on('pointerdown', () => {
+      if (GameState.soundEnabled) Sound.play('ui_click');
+      this.scene.start('MenuScene');
+    });
 
     // Currency display top-right
     this.add
@@ -82,11 +86,13 @@ export class ShopScene extends Phaser.Scene {
 
     if (!isActive) {
       bg.on('pointerdown', () => {
+        if (GameState.soundEnabled) Sound.play('ui_click');
         this.activeTab = tab;
         this.scene.restart();
       });
       text.setInteractive({ useHandCursor: true });
       text.on('pointerdown', () => {
+        if (GameState.soundEnabled) Sound.play('ui_click');
         this.activeTab = tab;
         this.scene.restart();
       });
@@ -162,6 +168,7 @@ export class ShopScene extends Phaser.Scene {
           .setOrigin(1, 0.5)
           .setInteractive({ useHandCursor: true });
         equipBtn.on('pointerdown', () => {
+          if (GameState.soundEnabled) Sound.play('pickaxe_equip');
           GameState.equipPickaxe(pickaxeId);
           this.scene.restart();
         });
@@ -183,8 +190,15 @@ export class ShopScene extends Phaser.Scene {
         if (canAfford) {
           buyBtn.setInteractive({ useHandCursor: true });
           buyBtn.on('pointerdown', () => {
+            if (GameState.soundEnabled) Sound.play('shop_buy');
             const success = GameState.unlockPickaxe(pickaxeId);
             if (success) this.scene.restart();
+          });
+        } else if (GameState.soundEnabled) {
+          // Play cannot afford sound when clicking but can't afford
+          buyBtn.setInteractive({ useHandCursor: true });
+          buyBtn.on('pointerdown', () => {
+            Sound.play('shop_cannot_afford');
           });
         }
       }
@@ -254,6 +268,7 @@ export class ShopScene extends Phaser.Scene {
           .setOrigin(1, 0.5)
           .setInteractive({ useHandCursor: true });
         wearBtn.on('pointerdown', () => {
+          if (GameState.soundEnabled) Sound.play('pickaxe_equip');
           GameState.equipSkin(skin.id);
           this.scene.restart();
         });
@@ -272,8 +287,14 @@ export class ShopScene extends Phaser.Scene {
         if (canAfford) {
           buyBtn.setInteractive({ useHandCursor: true });
           buyBtn.on('pointerdown', () => {
+            if (GameState.soundEnabled) Sound.play('shop_buy');
             const success = GameState.unlockSkin(skin.id);
             if (success) this.scene.restart();
+          });
+        } else if (GameState.soundEnabled) {
+          buyBtn.setInteractive({ useHandCursor: true });
+          buyBtn.on('pointerdown', () => {
+            Sound.play('shop_cannot_afford');
           });
         }
       }

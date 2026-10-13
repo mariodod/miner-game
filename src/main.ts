@@ -5,6 +5,7 @@ import { GameScene } from './scenes/GameScene';
 import { GameOverScene } from './scenes/GameOverScene';
 import { ShopScene } from './scenes/ShopScene';
 import { HUDScene } from './scenes/HUDScene';
+import { Sound } from './core/SoundManager';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -28,3 +29,15 @@ const config: Phaser.Types.Core.GameConfig = {
 };
 
 new Phaser.Game(config);
+
+// Initialize sound on first user interaction (required by browser autoplay policy)
+let soundInitialized = false;
+const initSound = () => {
+  if (!soundInitialized) {
+    Sound.init();
+    soundInitialized = true;
+  }
+};
+['pointerdown', 'keydown', 'touchstart'].forEach(evt => {
+  window.addEventListener(evt, initSound, { once: true, passive: true });
+});

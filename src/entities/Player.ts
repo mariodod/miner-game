@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { PickaxeId } from '../config/pickaxes';
 import { GameState } from '../core/GameState';
+import { SKINS_CONFIG, MinerSkin } from '../config/economy';
 
 export class Player extends Phaser.GameObjects.Container {
   public gridX: number = 3;
@@ -10,6 +11,8 @@ export class Player extends Phaser.GameObjects.Container {
   private minerSprite: Phaser.GameObjects.Sprite;
   private pickaxeSprite: Phaser.GameObjects.Sprite;
   private lampGlow: Phaser.GameObjects.Arc;
+  private skinUnsub: (() => void) | null = null;
+  private currentSkinId: string = 'classic';
 
   constructor(scene: Phaser.Scene, x: number, y: number, gridX: number = 3, gridY: number = 0) {
     super(scene, x, y);
@@ -17,12 +20,19 @@ export class Player extends Phaser.GameObjects.Container {
     this.gridX = gridX;
     this.gridY = gridY;
 
-    // Ambient glow
-    this.lampGlow = scene.add.circle(0, 0, 48, 0xfef08a, 0.12);
+    // Get initial skin
+    const initialSkin = SKINS_CONFIG.find(s => s.id === GameState.equippedSkin) || SKINS_CONFIG[0];
+    this.currentSkinId = initialSkin.id;
+
+    // Ambient glow (updated by skin)
+    this.lampGlow = scene.add.circle(0, 0, 48, initialSkin.glowColor, 0.12);
     this.add(this.lampGlow);
 
+    // Generate initial miner texture with skin colors
+    this.generateMinerTexture(initialSkin);
+
     // Miner Body Sprite
-    this.minerSprite = scene.add.sprite(0, 0, 'miner_character');
+    this.minerSprite = scene.add.sprite(0, 0, `miner_character_${this.currentSkinId}`);
     this.minerSprite.setOrigin(0.5, 0.5);
     this.add(this.minerSprite);
 
@@ -39,6 +49,83 @@ export class Player extends Phaser.GameObjects.Container {
     GameState.on('pickaxeChanged', (newPickaxe: PickaxeId) => {
       this.updatePickaxeTexture(newPickaxe);
     });
+
+    // Listen for skin change
+    this.skinUnsub = GameState.on('skinChanged', (skinId: string) => {
+      const skin = SKINS_CONFIG.find(s => s.id === skinId);
+      if (skin) this.applySkin(skin);
+    });
+  }
+
+  /**
+   * Generates a miner character texture with the given skin colors
+   */
+  private generateMinerTexture(skin: MinerSkin): void {
+    const scene = this.scene;
+    const key = `miner_character_${skin.id}`;
+
+    // Destroy existing texture if it exists
+    if (scene.textures.exists(key)) {
+      scene.textures.remove(key);
+    }
+
+    const g = scene.make.graphics({ x: 0, y: 0 });
+
+    // Head / Face (skin tone)
+    g.fillStyle(0xfbcfe8, 1);
+    g.fillRect(10, 10, 16, 14);
+
+    // Helmet / Hardhat
+    g.fillStyle(skin.helmetColor, 1);
+    g.fillRect(8, 2, 20, 10);
+    g.fillRect(4, 10, 28, 4); // Helmet brim
+
+    // Headlamp light beam
+    g.fillStyle(0xffffff, 1);
+    g.fillRect(24, 6, 5, 5);
+    g.fillStyle(skin.glowColor, 0.6);
+    g.fillCircle(26, 8, 8);
+
+    // Eyes
+    g.fillStyle(0x0f172a, 1);
+    g.fillRect(20, 14, 3, 4);
+
+    // Body / Suit
+    g.fillStyle(skin.suitColor, 1);
+    g.fillRect(8, 24, 20, 14);
+
+    // Belt
+    g.fillStyle(0x78350f, 1);
+    g.fillRect(8, 36, 20, 3);
+    g.fillStyle(0xfacc15, 1);
+    g.fillRect(16, 36, 4, 3);
+
+    // Legs / Boots
+    g.fillStyle(0x1e293b, 1);
+    g.fillRect(9, 39, 8, 9);
+    g.fillRect(19, 39, 8, 9);
+
+    g.generateTexture(key, 36, 48);
+    g.destroy();
+  }
+
+  /**
+   * Applies a new skin by regenerating the miner texture
+   */
+  private applySkin(skin: MinerSkin): void {
+    if (skin.id === this.currentSkinId) return;
+
+    // Update glow color immediately
+    this.lampGlow.setFillStyle(skin.glowColor, 0.12);
+
+    // Generate new texture
+    this.generateMinerTexture(skin);
+    this.currentSkinId = skin.id;
+
+    // Swap texture on sprite
+    if (this.minerSprite) {
+      this.minerSprite.setTexture(`miner_character_${this.currentSkinId}`);
+    }
   }
 
   public updatePickaxeTexture(pickaxeId: PickaxeId): void {
@@ -138,5 +225,13 @@ export class Player extends Phaser.GameObjects.Container {
         if (callback) callback();
       },
     });
+  }
+
+  public destroy(fromScene?: boolean): void {
+    if (this.skinUnsub) {
+      this.skinUnsub();
+      this.skinUnsub = null;
+    }
+    super.destroy(fromScene);
   }
 }

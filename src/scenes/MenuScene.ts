@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { GameState } from '../core/GameState';
+import { Sound } from '../core/SoundManager';
 
 export class MenuScene extends Phaser.Scene {
   constructor() {
@@ -98,6 +99,7 @@ export class MenuScene extends Phaser.Scene {
       this.tweens.add({ targets: [btnBg, btnText], scale: 1.0, duration: 80 });
     });
     btnBg.on('pointerdown', () => {
+      if (GameState.soundEnabled) Sound.play('ui_click');
       this.tweens.add({
         targets: [btnBg, btnText],
         scale: 0.92,
@@ -118,7 +120,10 @@ export class MenuScene extends Phaser.Scene {
       new Phaser.Geom.Rectangle(width / 2 - 70, shopBtnY - 18, 140, 36),
       Phaser.Geom.Rectangle.Contains
     );
-    shopBg.on('pointerdown', () => this.scene.start('ShopScene'));
+    shopBg.on('pointerdown', () => {
+      if (GameState.soundEnabled) Sound.play('ui_click');
+      this.scene.start('ShopScene');
+    });
 
     this.add
       .text(width / 2, shopBtnY, '🛒 SHOP', {

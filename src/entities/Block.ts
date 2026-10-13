@@ -1,5 +1,7 @@
 import Phaser from 'phaser';
 import { BlockType, BLOCKS_CONFIG, calculateRequiredHits } from '../config/blocks';
+import { Sound } from '../core/SoundManager';
+import { GameState } from '../core/GameState';
 
 export class Block extends Phaser.GameObjects.Container {
   public gridX: number;
@@ -84,8 +86,19 @@ export class Block extends Phaser.GameObjects.Container {
     this.currentHp -= damage;
     this.playHitWobble(4);
 
+    // Play hit sound
+    if (GameState.soundEnabled) {
+      Sound.play('block_hit');
+    }
+
     if (this.currentHp <= 0) {
       this.isBroken = true;
+
+      // Play break sound
+      if (GameState.soundEnabled) {
+        Sound.play('block_break');
+      }
+
       return {
         broken: true,
         gold: config.valueGold,

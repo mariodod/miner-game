@@ -4,6 +4,7 @@ import { Player } from '../entities/Player';
 import { GameState } from '../core/GameState';
 import { PICKAXES_CONFIG, PickaxeType } from '../config/pickaxes';
 import { getRandomBlockForDepth } from '../config/blocks';
+import { Sound } from '../core/SoundManager';
 
 // ── Grid Constants ──────────────────────────────────────────────────────────
 const COLS = 7;
@@ -202,6 +203,11 @@ export class GameScene extends Phaser.Scene {
     const blockWorldX = col * BLOCK_SIZE + BLOCK_SIZE / 2;
     const pickaxeConfig = PICKAXES_CONFIG[GameState.equippedPickaxe];
 
+    // Play swing sound
+    if (GameState.soundEnabled) {
+      Sound.play('pickaxe_swing');
+    }
+
     this.player.playSwingAnimation(blockWorldX, () => {
       this.applyHit(block, col, row, pickaxeConfig.type);
       GameState.triggerHaptic(20);
@@ -279,6 +285,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private aoeExplosiveBlast(col: number, row: number): void {
+    // Play explosion sound
+    if (GameState.soundEnabled) {
+      Sound.play('explosion');
+    }
+
     // 3x3 blast
     const flashOverlay = this.add.graphics();
     flashOverlay.fillStyle(0xfef08a, 0.55);
@@ -334,10 +345,12 @@ export class GameScene extends Phaser.Scene {
     if (gold > 0) {
       GameState.addGold(gold);
       this.spawnFloatingText(worldX, worldY, `+${gold}💰`, '#facc15');
+      if (GameState.soundEnabled) Sound.play('gold_collect');
     }
     if (diamonds > 0) {
       GameState.addDiamonds(diamonds);
       this.spawnFloatingText(worldX, worldY - 20, `+${diamonds}💎`, '#38bdf8');
+      if (GameState.soundEnabled) Sound.play('diamond_collect');
     }
 
     // Check if player can fall into broken space below

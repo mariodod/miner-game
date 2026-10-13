@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GameState } from '../core/GameState';
 import { Ads } from '../core/AdManager';
+import { Sound } from '../core/SoundManager';
 
 export class GameOverScene extends Phaser.Scene {
   constructor() {
@@ -14,6 +15,15 @@ export class GameOverScene extends Phaser.Scene {
     const diamonds = GameState.runDiamondsCollected;
     const blocks = GameState.runBlocksBroken;
     const isHighScore = depth > 0 && depth >= GameState.highScoreDepth;
+
+    // Play game over or level up sound
+    if (GameState.soundEnabled) {
+      if (isHighScore) {
+        Sound.play('level_up');
+      } else {
+        Sound.play('game_over');
+      }
+    }
 
     // Dark overlay background
     const bg = this.add.graphics();
@@ -128,7 +138,9 @@ export class GameOverScene extends Phaser.Scene {
       let adUsed = false;
       adBg.on('pointerdown', () => {
         if (adUsed) return;
+        if (GameState.soundEnabled) Sound.play('ui_click');
         Ads.showRewardedAd(
+          this,
           'double_gold',
           'Watch a short ad to double your run gold!',
           `+${gold} bonus gold`,
@@ -152,7 +164,10 @@ export class GameOverScene extends Phaser.Scene {
       new Phaser.Geom.Rectangle(cardX + 16, playBtnY, cardW - 32, 40),
       Phaser.Geom.Rectangle.Contains
     );
-    playBg.on('pointerdown', () => this.scene.start('GameScene'));
+    playBg.on('pointerdown', () => {
+      if (GameState.soundEnabled) Sound.play('ui_click');
+      this.scene.start('GameScene');
+    });
 
     this.add
       .text(width / 2, playBtnY + 20, '⛏ PLAY AGAIN', {
@@ -171,7 +186,10 @@ export class GameOverScene extends Phaser.Scene {
       new Phaser.Geom.Rectangle(cardX + 16, menuBtnY, cardW - 32, 28),
       Phaser.Geom.Rectangle.Contains
     );
-    menuBg.on('pointerdown', () => this.scene.start('MenuScene'));
+    menuBg.on('pointerdown', () => {
+      if (GameState.soundEnabled) Sound.play('ui_click');
+      this.scene.start('MenuScene');
+    });
 
     this.add
       .text(width / 2, menuBtnY + 14, 'MAIN MENU', {

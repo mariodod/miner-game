@@ -1,9 +1,11 @@
 import Phaser from 'phaser';
 import { Block } from '../entities/Block';
 import { Player } from '../entities/Player';
+import { Enemy } from '../entities/Enemy';
 import { GameState } from '../core/GameState';
 import { PICKAXES_CONFIG, PickaxeType } from '../config/pickaxes';
 import { getRandomBlockForDepth } from '../config/blocks';
+import { shouldEnemySpawn, getRandomEnemyForDepth, ENEMIES_CONFIG } from '../config/enemies';
 import { Sound } from '../core/SoundManager';
 
 // ── Grid Constants ──────────────────────────────────────────────────────────
@@ -19,11 +21,15 @@ export class GameScene extends Phaser.Scene {
 
   // Entities
   private player!: Player;
+  private enemies: Map<string, Enemy> = new Map();
 
   // State
   private isMining: boolean = false;
   private explosiveHitCount: number = 0;
   private EXPLOSIVE_CHARGE_MAX = 5;
+
+  // Combat
+  private isAttacking: boolean = false;
 
   // Particle emitter
   private particles!: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -111,6 +117,10 @@ export class GameScene extends Phaser.Scene {
     return `${col},${row}`;
   }
 
+  private enemyKey(col: number, row: number): string {
+    return `enemy_${col},${row}`;
+  }
+
   private generateChunk(startRow: number, endRow: number): void {
     const efficiency = PICKAXES_CONFIG[GameState.equippedPickaxe].efficiency;
 
@@ -163,7 +173,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tryMineAt(worldX: number, worldY: number): void {
-    if (this.isMining) return;
+    if (this.isMining || this.isAttacking) return;
+
+    // First, try to attack an enemy at this position
+    if (this.tryAttackEnemy(worldX, worldY)) {
+      return;
+    }
 
     const col = Math.floor(worldX / BLOCK_SIZE);
     const row = Math.floor(worldY / BLOCK_SIZE);
@@ -341,6 +356,9 @@ export class GameScene extends Phaser.Scene {
     });
     this.blocks.delete(this.gridKey(col, row));
 
+    // Chance to spawn enemy when breaking block
+    this.trySpawnEnemy(col, row, block.blockType);
+
     // Collect rewards
     if (gold > 0) {
       GameState.addGold(gold);
@@ -375,6 +393,145 @@ export class GameScene extends Phaser.Scene {
         this.player.moveToGrid(newX, newY, col, row);
         GameState.updateDepth(row * 3);
       });
+    }
+  }
+
+  // ─── Enemy System ────────────────────────────────────────────────────────────
+
+  private trySpawnEnemy(col: number, row: number, blockType: string): void {
+    const depth = row * 3;
+    if (!shouldEnemySpawn(blockType as any, depth)) return;
+
+    const enemyType = getRandomEnemyForDepth(depth, PICKAXES_CONFIG[GameState.equippedPickaxe].efficiency);
+    if (!enemyType) return;
+
+    const key = this.enemyKey(col, row);
+    if (this.enemies.has(key)) return;
+
+    const x = col * BLOCK_SIZE + BLOCK_SIZE / 2;
+    const y = row * BLOCK_SIZE + BLOCK_SIZE / 2;
+
+    const enemy = new Enemy(this, x, y, col, row, enemyType, PICKAXES_CONFIG[GameState.equippedPickaxe].efficiency);
+    enemy.setTargetPlayer(this.player);
+    this.enemies.set(key, enemy);
+
+    // Spawn effect
+    this.particles.setPosition(x, y);
+    this.particles.setParticleTint(ENEMIES_CONFIG[enemyType].accentColor);
+    this.particles.explode(12);
+  }
+
+  private tryAttackEnemy(worldX: number, worldY: number): boolean {
+    if (this.isAttacking) return false;
+
+    const col = Math.floor(worldX / BLOCK_SIZE);
+    const row = Math.floor(worldY / BLOCK_SIZE);
+
+    if (col < 0 || col >= COLS) return false;
+
+    // Check if there's an enemy at or adjacent to this position
+    const key = this.enemyKey(col, row);
+    let enemy = this.enemies.get(key);
+
+    // Also check adjacent positions (enemy might be slightly off-grid)
+    if (!enemy) {
+      for (let dc = -1; dc <= 1; dc++) {
+        for (let dr = -1; dr <= 1; dr++) {
+          const adjKey = this.enemyKey(col + dc, row + dr);
+          const e = this.enemies.get(adjKey);
+          if (e && !e.isDead) {
+            const dist = Phaser.Math.Distance.Between(worldX, worldY, e.x, e.y);
+            if (dist < BLOCK_SIZE * 0.8) {
+              enemy = e;
+              break;
+            }
+          }
+        }
+        if (enemy) break;
+      }
+    }
+
+    if (!enemy || enemy.isDead) return false;
+
+    // Check if player is adjacent to enemy
+    const dx = Math.abs(col - this.player.gridX);
+    const dy = Math.abs(row - this.player.gridY);
+    const isAdjacent = (dx <= 1 && dy <= 1);
+
+    if (!isAdjacent) return false;
+
+    this.isAttacking = true;
+
+    const pickaxeConfig = PICKAXES_CONFIG[GameState.equippedPickaxe];
+    const damage = pickaxeConfig.efficiency; // Base damage = efficiency
+
+    const blockWorldX = enemy.x;
+    this.player.playSwingAnimation(blockWorldX, () => {
+      const result = enemy.takeDamage(damage, this.player.x, this.player.y);
+
+      // Play swing sound
+      if (GameState.soundEnabled) {
+        Sound.play('pickaxe_swing');
+      }
+
+      // Hit particles
+      this.particles.setPosition(enemy.x, enemy.y);
+      this.particles.setParticleTint(enemy.config.accentColor);
+      this.particles.explode(8);
+
+      if (result.dead) {
+        this.onEnemyKilled(enemy, col, row, result.gold || 0, result.diamonds || 0);
+      } else {
+        GameState.triggerHaptic(15);
+      }
+
+      this.isAttacking = false;
+    });
+
+    return true;
+  }
+
+  private onEnemyKilled(enemy: Enemy, col: number, row: number, gold: number, diamonds: number): void {
+    const worldX = col * BLOCK_SIZE + BLOCK_SIZE / 2;
+    const worldY = row * BLOCK_SIZE + BLOCK_SIZE / 2;
+
+    // Remove from map
+    this.enemies.delete(this.enemyKey(col, row));
+
+    // Rewards
+    if (gold > 0) {
+      GameState.addGold(gold);
+      this.spawnFloatingText(worldX, worldY - 10, `+${gold}💰`, '#facc15');
+      if (GameState.soundEnabled) Sound.play('gold_collect');
+    }
+    if (diamonds > 0) {
+      GameState.addDiamonds(diamonds);
+      this.spawnFloatingText(worldX, worldY - 30, `+${diamonds}💎`, '#38bdf8');
+      if (GameState.soundEnabled) Sound.play('diamond_collect');
+    }
+
+    // XP/Level up notification (placeholder for future)
+    this.spawnFloatingText(worldX, worldY - 50, `💀 ${enemy.config.name} Defeated!`, '#ef4444');
+  }
+
+  private updateEnemies(): void {
+    const camTop = this.cameras.main.worldView.top;
+    const camBottom = this.cameras.main.worldView.bottom;
+    const cullRowTop = Math.floor(camTop / BLOCK_SIZE) - 3;
+    const cullRowBottom = Math.floor(camBottom / BLOCK_SIZE) + 3;
+
+    for (const [key, enemy] of this.enemies) {
+      if (enemy.isDead) {
+        this.enemies.delete(key);
+        continue;
+      }
+
+      // Cull off-screen enemies
+      if (enemy.gridY < cullRowTop || enemy.gridY > cullRowBottom) {
+        enemy.setVisible(false);
+      } else {
+        enemy.setVisible(true);
+      }
     }
   }
 
@@ -416,5 +573,8 @@ export class GameScene extends Phaser.Scene {
         block.setVisible(true);
       }
     }
+
+    // Update enemies
+    this.updateEnemies();
   }
 }

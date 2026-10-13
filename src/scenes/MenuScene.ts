@@ -1,0 +1,160 @@
+import Phaser from 'phaser';
+import { GameState } from '../core/GameState';
+
+export class MenuScene extends Phaser.Scene {
+  constructor() {
+    super('MenuScene');
+  }
+
+  create() {
+    const { width, height } = this.scale;
+
+    GameState.startNewRun();
+
+    // ── Background gradient via graphics ──
+    const bg = this.add.graphics();
+    bg.fillGradientStyle(0x0a0a1a, 0x0a0a1a, 0x1a0a2e, 0x1a0a2e, 1);
+    bg.fillRect(0, 0, width, height);
+
+    // Procedural star field
+    this.generateStars(width, height);
+
+    // Underground horizon glow
+    const glow = this.add.graphics();
+    glow.fillGradientStyle(0x000000, 0x000000, 0x78350f, 0x78350f, 0, 0, 0.4, 0.4);
+    glow.fillRect(0, height * 0.55, width, height * 0.45);
+
+    // Pixel ground line
+    const ground = this.add.graphics();
+    ground.fillStyle(0x8b5a2b, 1);
+    ground.fillRect(0, height * 0.62, width, 8);
+    ground.fillStyle(0x64748b, 1);
+    ground.fillRect(0, height * 0.62 + 8, width, height);
+
+    // Title
+    const title = this.add
+      .text(width / 2, height * 0.22, '⛏️', { fontSize: '52px' })
+      .setOrigin(0.5);
+    const titleText = this.add
+      .text(width / 2, height * 0.32, 'POCKET MINER', {
+        fontSize: '30px',
+        fontStyle: 'bold',
+        color: '#facc15',
+        stroke: '#78350f',
+        strokeThickness: 4,
+        shadow: { offsetX: 0, offsetY: 3, color: '#000', blur: 6, fill: true },
+      })
+      .setOrigin(0.5);
+
+    this.tweens.add({
+      targets: [title, titleText],
+      y: '-=6',
+      duration: 1800,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
+    // Subtitle
+    this.add
+      .text(width / 2, height * 0.4, 'DIG · COLLECT · UPGRADE', {
+        fontSize: '12px',
+        color: '#94a3b8',
+      })
+      .setOrigin(0.5);
+
+    // High Score
+    if (GameState.highScoreDepth > 0) {
+      this.add
+        .text(width / 2, height * 0.47, `🏆 Best Depth: ${GameState.highScoreDepth}m`, {
+          fontSize: '13px',
+          color: '#fcd34d',
+        })
+        .setOrigin(0.5);
+    }
+
+    // ── Play Button ──
+    const btnY = height * 0.60;
+    const btnBg = this.add.graphics();
+    btnBg.fillStyle(0xf59e0b, 1);
+    btnBg.fillRoundedRect(width / 2 - 80, btnY - 22, 160, 44, 22);
+    btnBg.setInteractive(
+      new Phaser.Geom.Rectangle(width / 2 - 80, btnY - 22, 160, 44),
+      Phaser.Geom.Rectangle.Contains
+    );
+
+    const btnText = this.add
+      .text(width / 2, btnY, 'PLAY', {
+        fontSize: '22px',
+        fontStyle: 'bold',
+        color: '#1c1917',
+      })
+      .setOrigin(0.5);
+
+    btnBg.on('pointerover', () => {
+      this.tweens.add({ targets: [btnBg, btnText], scale: 1.05, duration: 80 });
+    });
+    btnBg.on('pointerout', () => {
+      this.tweens.add({ targets: [btnBg, btnText], scale: 1.0, duration: 80 });
+    });
+    btnBg.on('pointerdown', () => {
+      this.tweens.add({
+        targets: [btnBg, btnText],
+        scale: 0.92,
+        duration: 60,
+        yoyo: true,
+        onComplete: () => this.scene.start('GameScene'),
+      });
+    });
+
+    // ── Shop Button ──
+    const shopBtnY = btnY + 58;
+    const shopBg = this.add.graphics();
+    shopBg.fillStyle(0x1e293b, 1);
+    shopBg.lineStyle(2, 0x64748b, 1);
+    shopBg.fillRoundedRect(width / 2 - 70, shopBtnY - 18, 140, 36, 18);
+    shopBg.strokeRoundedRect(width / 2 - 70, shopBtnY - 18, 140, 36, 18);
+    shopBg.setInteractive(
+      new Phaser.Geom.Rectangle(width / 2 - 70, shopBtnY - 18, 140, 36),
+      Phaser.Geom.Rectangle.Contains
+    );
+    shopBg.on('pointerdown', () => this.scene.start('ShopScene'));
+
+    this.add
+      .text(width / 2, shopBtnY, '🛒 SHOP', {
+        fontSize: '16px',
+        color: '#cbd5e1',
+      })
+      .setOrigin(0.5);
+
+    // Currency row
+    this.add
+      .text(width / 2, height * 0.84, `💰 ${GameState.gold}   💎 ${GameState.diamonds}`, {
+        fontSize: '15px',
+        color: '#e2e8f0',
+        backgroundColor: '#0f172a',
+        padding: { x: 12, y: 6 },
+      })
+      .setOrigin(0.5);
+
+    // Version tag
+    this.add
+      .text(width - 8, height - 8, 'v0.1', {
+        fontSize: '10px',
+        color: '#475569',
+      })
+      .setOrigin(1, 1);
+  }
+
+  private generateStars(width: number, height: number): void {
+    const g = this.add.graphics();
+    for (let i = 0; i < 60; i++) {
+      const x = Phaser.Math.Between(0, width);
+      const y = Phaser.Math.Between(0, height * 0.55);
+      const size = Phaser.Math.FloatBetween(0.5, 2.0);
+      const alpha = Phaser.Math.FloatBetween(0.3, 1.0);
+      g.fillStyle(0xffffff, alpha);
+      g.fillCircle(x, y, size);
+    }
+  }
+}

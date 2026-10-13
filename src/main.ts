@@ -1,29 +1,10 @@
 import Phaser from 'phaser';
-
-class GameScene extends Phaser.Scene {
-  constructor() {
-    super('GameScene');
-  }
-
-  create() {
-    const { width, height } = this.scale;
-
-    this.add
-      .text(width / 2, height / 2 - 40, '⛏️ POCKET MINER', {
-        fontSize: '32px',
-        color: '#facc15',
-        fontStyle: 'bold',
-      })
-      .setOrigin(0.5);
-
-    this.add
-      .text(width / 2, height / 2 + 20, 'Ready to mine depth 0m', {
-        fontSize: '18px',
-        color: '#cbd5e1',
-      })
-      .setOrigin(0.5);
-  }
-}
+import { BootScene } from './scenes/BootScene';
+import { MenuScene } from './scenes/MenuScene';
+import { GameScene } from './scenes/GameScene';
+import { GameOverScene } from './scenes/GameOverScene';
+import { ShopScene } from './scenes/ShopScene';
+import { HUDScene } from './scenes/HUDScene';
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
@@ -34,8 +15,16 @@ const config: Phaser.Types.Core.GameConfig = {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  backgroundColor: '#111827',
-  scene: [GameScene],
+  backgroundColor: '#0f172a',
+  scene: [BootScene, MenuScene, GameScene, GameOverScene, ShopScene, HUDScene],
+  input: {
+    activePointers: 2, // Multi-touch support
+  },
+  render: {
+    antialias: false,  // Crisp pixel-art style
+    pixelArt: false,
+    roundPixels: true,
+  },
 };
 
 new Phaser.Game(config);

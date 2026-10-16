@@ -22,6 +22,14 @@ export class Enemy extends Phaser.GameObjects.Container {
   private targetPlayer: Phaser.GameObjects.Container | null = null;
   private isAiPaused: boolean = false;
 
+  /** GameScene hook — may this enemy step onto (col, row)? */
+  public canStepTo: ((col: number, row: number) => boolean) | null = null;
+  /** GameScene hook — re-key the enemy map after a completed grid step. */
+  public onGridMove: ((enemy: Enemy, oldCol: number, oldRow: number) => void) | null = null;
+
+  /** True while a grid-step tween is in flight. */
+  public isMoving: boolean = false;
+
   /** Called when this enemy lands a hit on the player (GameScene applies it). */
   public onPlayerHit: ((damage: number) => void) | null = null;
   private damageFlashTimer: Phaser.Time.TimerEvent | null = null;
@@ -224,9 +232,9 @@ export class Enemy extends Phaser.GameObjects.Container {
   }
 
   private startAI(): void {
-    // Wander behavior with occasional player targeting
+    // One decision every ~0.5-1s: hop toward the miner or wander the shaft.
     this.moveTimer = this.scene.time.addEvent({
-      delay: Phaser.Math.Between(1500, 3000),
+      delay: Phaser.Math.Between(550, 1000),
       loop: true,
       callback: this.decideAction,
       callbackScope: this,
@@ -237,88 +245,101 @@ export class Enemy extends Phaser.GameObjects.Container {
   }
 
   private decideAction(): void {
-    if (this.isDead || this.isStunned || this.isAiPaused) return;
+    if (this.isDead || this.isStunned || this.isAiPaused || this.isMoving) return;
 
-    // Find player if nearby
-    if (this.targetPlayer && !this.attackCooldown) {
-      const dist = Phaser.Math.Distance.Between(
-        this.x, this.y,
-        this.targetPlayer.x, this.targetPlayer.y
-      );
-      if (dist < 120) {
-        this.moveTowardsPlayer();
+    const BLOCK_SIZE = 48;
+    const toGrid = (v: number) => Math.round((v - BLOCK_SIZE / 2) / BLOCK_SIZE);
+
+    if (this.targetPlayer) {
+      const playerCol = toGrid(this.targetPlayer.x);
+      const playerRow = toGrid(this.targetPlayer.y);
+      const dCol = playerCol - this.gridX;
+      const dRow = playerRow - this.gridY;
+      const range = Math.max(Math.abs(dCol), Math.abs(dRow));
+
+      // In reach — attack instead of stepping
+      if (range <= 1) {
+        this.attackPlayer();
         return;
       }
+
+      // Scent the miner and take a greedy step toward them
+      if (range <= 5 && this.tryStep(dCol, dRow)) return;
     }
 
-    // Random wander
-    this.wander();
+    // Otherwise wander to a random passable neighbour
+    const dirs = Phaser.Utils.Array.Shuffle([
+      { dCol: -1, dRow: 0 },
+      { dCol: 1, dRow: 0 },
+      { dCol: 0, dRow: -1 },
+      { dCol: 0, dRow: 1 },
+    ]);
+    for (const dir of dirs) {
+      if (this.tryStep(dir.dCol, dir.dRow)) return;
+    }
   }
 
-  private wander(): void {
-    const directions = [
-      { x: -1, y: 0 }, { x: 1, y: 0 }, { x: 0, y: -1 }, { x: 0, y: 1 }
-    ];
-    const dir = Phaser.Utils.Array.GetRandom(directions);
+  /**
+   * Attempts a single grid step, trying the dominant axis first. Every
+   * candidate cell must pass the GameScene passability check, so enemies
+   * never burrow through solid rock or drift outside the shaft.
+   */
+  private tryStep(dCol: number, dRow: number): boolean {
+    const steps: Array<{ dc: number; dr: number }> = [];
+    if (Math.abs(dCol) >= Math.abs(dRow)) {
+      if (dCol !== 0) steps.push({ dc: Math.sign(dCol), dr: 0 });
+      if (dRow !== 0) steps.push({ dc: 0, dr: Math.sign(dRow) });
+    } else {
+      if (dRow !== 0) steps.push({ dc: 0, dr: Math.sign(dRow) });
+      if (dCol !== 0) steps.push({ dc: Math.sign(dCol), dr: 0 });
+    }
+
+    for (const step of steps) {
+      const col = this.gridX + step.dc;
+      const row = this.gridY + step.dr;
+      if (!this.canStepTo || !this.canStepTo(col, row)) continue;
+      this.stepTo(col, row);
+      return true;
+    }
+    return false;
+  }
+
+  /** Animates a single-cell hop and re-keys the enemy map on arrival. */
+  private stepTo(col: number, row: number): void {
     const BLOCK_SIZE = 48;
-    const targetX = this.x + dir.x * BLOCK_SIZE;
-    const targetY = this.y + dir.y * BLOCK_SIZE;
+    const oldCol = this.gridX;
+    const oldRow = this.gridY;
+    // Faster enemies hop quicker; clamped so nothing teleports or crawls.
+    const duration = Phaser.Math.Clamp(Math.round(18000 / this.config.speed), 280, 900);
+
+    this.isMoving = true;
+
+    if (col < oldCol) this.setScale(-1, 1);
+    else if (col > oldCol) this.setScale(1, 1);
 
     this.scene.tweens.add({
       targets: this,
-      x: targetX,
-      y: targetY,
-      duration: 800,
-      ease: 'Power1',
+      x: col * BLOCK_SIZE + BLOCK_SIZE / 2,
+      y: row * BLOCK_SIZE + BLOCK_SIZE / 2,
+      duration,
+      ease: 'Sine.easeInOut',
       onComplete: () => {
-        this.gridX = Math.round(this.x / BLOCK_SIZE);
-        this.gridY = Math.round(this.y / BLOCK_SIZE);
+        this.gridX = col;
+        this.gridY = row;
+        this.isMoving = false;
+        if (this.active && this.onGridMove) this.onGridMove(this, oldCol, oldRow);
       },
     });
-
-    // Face direction
-    if (dir.x < 0) this.setScale(-1, 1);
-    else if (dir.x > 0) this.setScale(1, 1);
-  }
-
-  private moveTowardsPlayer(): void {
-    if (!this.targetPlayer) return;
-
-    const dx = this.targetPlayer.x - this.x;
-    const dy = this.targetPlayer.y - this.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (dist < 40) {
-      // Attack range
-      this.attackPlayer();
-      return;
-    }
-
-    const speed = this.config.speed;
-    const moveX = (dx / dist) * speed * 0.1;
-    const moveY = (dy / dist) * speed * 0.1;
-
-    this.scene.tweens.add({
-      targets: this,
-      x: this.x + moveX,
-      y: this.y + moveY,
-      duration: 100,
-      ease: 'Linear',
-    });
-
-    // Face player
-    if (dx < 0) this.setScale(-1, 1);
-    else this.setScale(1, 1);
   }
 
   private attackPlayer(): void {
     if (this.attackCooldown || !this.targetPlayer || this.isAiPaused || this.isDead) return;
     this.attackCooldown = true;
 
-    // Visual attack indicator
+    // Visual attack indicator (relative so a mirrored enemy stays mirrored)
     this.scene.tweens.add({
       targets: this,
-      scaleX: 1.2,
+      scaleX: this.scaleX * 1.2,
       scaleY: 0.9,
       duration: 80,
       yoyo: true,

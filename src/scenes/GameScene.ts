@@ -16,6 +16,8 @@ const COLS = 7;
 const BLOCK_SIZE = 48;
 const VISIBLE_ROWS = 12; // rows rendered above/below camera
 const CHUNK_SIZE = 10; // generate N rows at a time
+const SPAWN_COL = Math.floor(COLS / 2); // miner entrance column
+const GRID_STAND_OFFSET = -6; // miner stands slightly above a cell's centre
 
 export class GameScene extends Phaser.Scene {
   // Grid
@@ -105,10 +107,10 @@ export class GameScene extends Phaser.Scene {
     // Generate initial chunks
     this.generateChunk(0, CHUNK_SIZE + VISIBLE_ROWS);
 
-    // Spawn player above first block row
-    const playerX = Math.floor(COLS / 2) * BLOCK_SIZE + BLOCK_SIZE / 2;
-    const playerY = BLOCK_SIZE / 2 - 6;
-    this.player = new Player(this, playerX, playerY, Math.floor(COLS / 2), 0);
+    // Spawn the miner in the pre-cleared entrance cell of the first row
+    const playerX = SPAWN_COL * BLOCK_SIZE + BLOCK_SIZE / 2;
+    const playerY = BLOCK_SIZE / 2 + GRID_STAND_OFFSET;
+    this.player = new Player(this, playerX, playerY, SPAWN_COL, 0);
     this.player.setDepth(100);
 
     // HUD runs as a parallel overlay scene so it isn't affected by camera scroll
@@ -461,6 +463,10 @@ export class GameScene extends Phaser.Scene {
 
     for (let row = startRow; row < endRow; row++) {
       for (let col = 0; col < COLS; col++) {
+        // The miner's starting cell stays open — the run begins in the
+        // shaft mouth instead of inside a solid block.
+        if (row === 0 && col === SPAWN_COL) continue;
+
         const key = this.gridKey(col, row);
         if (this.blocks.has(key)) continue;
 
@@ -518,35 +524,73 @@ export class GameScene extends Phaser.Scene {
     const col = Math.floor(worldX / BLOCK_SIZE);
     const row = Math.floor(worldY / BLOCK_SIZE);
 
-    if (col < 0 || col >= COLS) return;
+    if (col < 0 || col >= COLS || row < 0) return;
 
-    // Only allow mining blocks adjacent to player
-    const dx = Math.abs(col - this.player.gridX);
+    // Only allow interacting with nearby cells
+    const dx = col - this.player.gridX;
     const dy = row - this.player.gridY;
+    const adx = Math.abs(dx);
 
-    const isAdjacent =
-      (dx === 0 && (dy === 0 || dy === 1)) ||        // same col, same or below
-      (dy === 0 && dx === 1) ||                       // same row, left/right
-      (dx === 1 && dy === 1);                         // diagonal below
+    const canMine =
+      (dx === 0 && (dy === 0 || dy === 1)) ||   // same col: own cell or below
+      (dy === 0 && adx === 1) ||                 // same row: left/right
+      (adx === 1 && dy === 1);                   // diagonally below
+    const canWalk = adx + Math.abs(dy) === 1;    // any directly adjacent cell
 
-    if (!isAdjacent) return;
+    if (!canMine && !canWalk) return;
 
-    const key = this.gridKey(col, row);
-    const block = this.blocks.get(key);
-    if (!block || block.isBroken) return;
+    const block = this.blocks.get(this.gridKey(col, row));
 
-    this.isMining = true;
+    if (block && !block.isBroken) {
+      // ── Mine the tapped block (walls can't be mined from bad angles) ──
+      if (!canMine) return;
+      this.isMining = true;
 
-    // Move player to the block's row if mining below
-    if (dy === 1) {
-      const newX = col * BLOCK_SIZE + BLOCK_SIZE / 2;
-      const newY = this.player.gridY * BLOCK_SIZE + BLOCK_SIZE / 2;
-      this.player.moveToGrid(newX, newY, col, this.player.gridY, () => {
+      if (adx === 1 && dy === 1 && this.isCellFree(col, this.player.gridY)) {
+        // Diagonal below with a dug path: step sideways first, then swing.
+        const newX = col * BLOCK_SIZE + BLOCK_SIZE / 2;
+        const newY = this.player.gridY * BLOCK_SIZE + BLOCK_SIZE / 2 + GRID_STAND_OFFSET;
+        this.player.moveToGrid(newX, newY, col, this.player.gridY, () => {
+          this.doMineHit(block, col, row);
+        });
+      } else {
+        // Straight below / side / own cell — swing from where we stand.
+        // (No sidestep into solid rock: the miner must dig the path first.)
         this.doMineHit(block, col, row);
-      });
-    } else {
-      this.doMineHit(block, col, row);
+      }
+      return;
     }
+
+    // ── No block here: walk into a directly adjacent empty cell (incl. up) ──
+    if (canWalk) {
+      const newX = col * BLOCK_SIZE + BLOCK_SIZE / 2;
+      const newY = row * BLOCK_SIZE + BLOCK_SIZE / 2 + GRID_STAND_OFFSET;
+      this.player.moveToGrid(newX, newY, col, row);
+    }
+  }
+
+  /** True when no live block occupies the cell (dug ground / open air). */
+  private isCellFree(col: number, row: number): boolean {
+    const block = this.blocks.get(this.gridKey(col, row));
+    return !block || block.isBroken;
+  }
+
+  /**
+   * Enemy movement rules: stay inside the shaft's generated area, move only
+   * through dug ground, and never share a cell with another enemy. Prevents
+   * enemies from burrowing through rock or drifting off-screen.
+   */
+  private isCellPassableForEnemy(col: number, row: number, mover: Enemy): boolean {
+    if (col < 0 || col >= COLS) return false;
+    if (row < 0 || row >= this.generatedRows) return false;
+    if (!this.isCellFree(col, row)) return false;
+
+    for (const other of this.enemies.values()) {
+      if (other !== mover && !other.isDead && other.gridX === col && other.gridY === row) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private doMineHit(block: Block, col: number, row: number): void {
@@ -743,7 +787,7 @@ export class GameScene extends Phaser.Scene {
     if (col === this.player.gridX && row === this.player.gridY + 1) {
       this.time.delayedCall(220, () => {
         const newX = col * BLOCK_SIZE + BLOCK_SIZE / 2;
-        const newY = row * BLOCK_SIZE + BLOCK_SIZE / 2 - 6;
+        const newY = row * BLOCK_SIZE + BLOCK_SIZE / 2 + GRID_STAND_OFFSET;
         this.player.moveToGrid(newX, newY, col, row);
         GameState.updateDepth(row * 3);
       });
@@ -762,6 +806,10 @@ export class GameScene extends Phaser.Scene {
 
     const key = this.enemyKey(col, row);
     if (this.enemies.has(key)) return;
+    // A wandering enemy may already occupy the cell even under a stale key.
+    for (const e of this.enemies.values()) {
+      if (!e.isDead && e.gridX === col && e.gridY === row) return;
+    }
 
     const x = col * BLOCK_SIZE + BLOCK_SIZE / 2;
     const y = row * BLOCK_SIZE + BLOCK_SIZE / 2;
@@ -769,6 +817,11 @@ export class GameScene extends Phaser.Scene {
     const enemy = new Enemy(this, x, y, col, row, enemyType, efficiency);
     enemy.setTargetPlayer(this.player);
     enemy.onPlayerHit = (damage) => this.damagePlayer(damage);
+    enemy.canStepTo = (c, r) => this.isCellPassableForEnemy(c, r, enemy);
+    enemy.onGridMove = (moved, oldCol, oldRow) => {
+      this.enemies.delete(this.enemyKey(oldCol, oldRow));
+      this.enemies.set(this.enemyKey(moved.gridX, moved.gridY), moved);
+    };
     this.enemies.set(key, enemy);
 
     // Spawn effect
@@ -792,33 +845,27 @@ export class GameScene extends Phaser.Scene {
 
     if (col < 0 || col >= COLS) return false;
 
-    // Check if there's an enemy at or adjacent to this position
-    const key = this.enemyKey(col, row);
-    let enemy = this.enemies.get(key);
-
-    // Also check adjacent positions (enemy might be slightly off-grid)
-    if (!enemy) {
-      for (let dc = -1; dc <= 1; dc++) {
-        for (let dr = -1; dr <= 1; dr++) {
-          const adjKey = this.enemyKey(col + dc, row + dr);
-          const e = this.enemies.get(adjKey);
-          if (e && !e.isDead) {
-            const dist = Phaser.Math.Distance.Between(worldX, worldY, e.x, e.y);
-            if (dist < BLOCK_SIZE * 0.8) {
-              enemy = e;
-              break;
-            }
-          }
-        }
-        if (enemy) break;
+    // Enemies move, so find the nearest live enemy to the tapped point
+    // instead of trusting the spawn-keyed map entry.
+    let enemy: Enemy | null = null;
+    let bestScore = Infinity;
+    for (const e of this.enemies.values()) {
+      if (e.isDead) continue;
+      const cellDist = Math.max(Math.abs(e.gridX - col), Math.abs(e.gridY - row));
+      const pxDist = Phaser.Math.Distance.Between(worldX, worldY, e.x, e.y);
+      if (cellDist > 1 && pxDist > BLOCK_SIZE * 0.8) continue;
+      const score = cellDist * BLOCK_SIZE + pxDist;
+      if (score < bestScore) {
+        bestScore = score;
+        enemy = e;
       }
     }
 
-    if (!enemy || enemy.isDead) return false;
+    if (!enemy) return false;
 
-    // Check if player is adjacent to enemy
-    const dx = Math.abs(col - this.player.gridX);
-    const dy = Math.abs(row - this.player.gridY);
+    // The miner must be within reach of the enemy's current cell
+    const dx = Math.abs(enemy.gridX - this.player.gridX);
+    const dy = Math.abs(enemy.gridY - this.player.gridY);
     const isAdjacent = (dx <= 1 && dy <= 1);
 
     if (!isAdjacent) return false;
@@ -838,7 +885,7 @@ export class GameScene extends Phaser.Scene {
         this.particles.explode(8);
 
         if (result.dead) {
-          this.onEnemyKilled(enemy, col, row, result.gold || 0, result.diamonds || 0);
+          this.onEnemyKilled(enemy, enemy.gridX, enemy.gridY, result.gold || 0, result.diamonds || 0);
         } else {
           GameState.triggerHaptic(15);
         }
@@ -866,8 +913,13 @@ export class GameScene extends Phaser.Scene {
     const worldX = col * BLOCK_SIZE + BLOCK_SIZE / 2;
     const worldY = row * BLOCK_SIZE + BLOCK_SIZE / 2;
 
-    // Remove from map
-    this.enemies.delete(this.enemyKey(col, row));
+    // Remove from the map by instance — the key is re-pointed as it moves
+    for (const [key, e] of this.enemies) {
+      if (e === enemy) {
+        this.enemies.delete(key);
+        break;
+      }
+    }
 
     // Rewards — physical drops fly to the HUD counters
     if (gold > 0) {

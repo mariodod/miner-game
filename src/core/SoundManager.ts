@@ -16,6 +16,7 @@ export type SoundEffect =
   | 'shop_cannot_afford'
   | 'level_up'
   | 'explosion'
+  | 'record'
   | 'ui_click'
   | 'game_over';
 
@@ -130,6 +131,15 @@ const SOUND_PRESETS: Record<SoundEffect, SoundConfig> = {
     attack: 0.02,
     decay: 0.45,
     pitchSlide: -24,
+  },
+  record: {
+    type: 'triangle',
+    frequency: [523, 659, 784, 1047, 1397], // C5 E5 G5 C6 F6 — victory fanfare
+    duration: 0.7,
+    volume: 0.22,
+    attack: 0.01,
+    decay: 0.55,
+    pitchSlide: 2,
   },
   ui_click: {
     type: 'square',

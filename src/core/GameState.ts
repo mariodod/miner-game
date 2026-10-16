@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core';
 import { PickaxeId, PICKAXES_CONFIG } from '../config/pickaxes';
 import { SKINS_CONFIG, UPGRADES_CONFIG, UpgradeId, getUpgradeCost } from '../config/economy';
+import { BiomeDef, getBiomeForDepth } from '../config/biomes';
 
 export interface GameSaveData {
   gold: number;
@@ -22,6 +23,27 @@ const STORAGE_KEY = 'pocket_miner_save_v1';
 /** Player health for a single run (death opens the revive ad offer). */
 export const PLAYER_MAX_HP = 10;
 
+/** Depth reward cadence: a chest is earned every 25 m of a run. */
+export const MILESTONE_STEP_M = 25;
+/** A "new record" needs at least this much prior history to be worth cheering. */
+const RECORD_MIN_PRIOR_DEPTH = 10;
+
+/** Payload emitted for every milestone chest crossing. */
+export interface DepthMilestoneInfo {
+  /** Milestone depth in meters (25, 50, 75, ...). */
+  depth: number;
+  /** How many milestones were crossed at once (usually 1). */
+  count: number;
+  gold: number;
+  diamonds: number;
+}
+
+/** Payload emitted the first time a run beats the previous best depth. */
+export interface NewRecordInfo {
+  depth: number;
+  previous: number;
+}
+
 export class GameStateManager {
   private static instance: GameStateManager;
 
@@ -35,6 +57,11 @@ export class GameStateManager {
   public runBlocksBroken: number = 0;
   public explosiveCharge: number = 0; // For explosive pickaxe counter
   public playerHp: number = PLAYER_MAX_HP; // Transient run health
+
+  // Milestone / record / biome tracking (reset by startNewRun)
+  private lastMilestone: number = 0;
+  private recordCelebratedThisRun: boolean = false;
+  private lastBiomeId: string = 'topsoil';
 
   private listeners: Map<string, Set<(val: any) => void>> = new Map();
 
@@ -230,6 +257,7 @@ export class GameStateManager {
 
   public updateDepth(depth: number): void {
     if (depth > this.currentDepth) {
+      const previousHigh = this.data.highScoreDepth;
       this.currentDepth = depth;
       if (this.currentDepth > this.data.highScoreDepth) {
         this.data.highScoreDepth = this.currentDepth;
@@ -237,7 +265,50 @@ export class GameStateManager {
         this.emit('highScoreChanged', this.data.highScoreDepth);
       }
       this.emit('depthChanged', this.currentDepth);
+      this.checkMilestones();
+      this.checkRecord(previousHigh);
+      this.checkBiome();
     }
+  }
+
+  /** Emits a reward event for every 25 m boundary crossed. */
+  private checkMilestones(): void {
+    let count = 0;
+    let gold = 0;
+    let diamonds = 0;
+
+    while (this.currentDepth >= (this.lastMilestone + 1) * MILESTONE_STEP_M) {
+      this.lastMilestone += 1;
+      count += 1;
+      gold += 20 * this.lastMilestone;
+      diamonds += Math.ceil(this.lastMilestone / 2);
+    }
+
+    if (count === 0) return;
+    this.emit('depthMilestone', {
+      depth: this.lastMilestone * MILESTONE_STEP_M,
+      count,
+      gold,
+      diamonds,
+    } satisfies DepthMilestoneInfo);
+  }
+
+  /** Fires once per run when the player passes their previous best depth. */
+  private checkRecord(previousHigh: number): void {
+    if (this.recordCelebratedThisRun) return;
+    if (previousHigh < RECORD_MIN_PRIOR_DEPTH) return;
+    if (this.currentDepth <= previousHigh) return;
+
+    this.recordCelebratedThisRun = true;
+    this.emit('newRecord', { depth: this.currentDepth, previous: previousHigh } satisfies NewRecordInfo);
+  }
+
+  /** Emits when the depth enters a new visual biome band. */
+  private checkBiome(): void {
+    const biome: BiomeDef = getBiomeForDepth(this.currentDepth);
+    if (biome.id === this.lastBiomeId) return;
+    this.lastBiomeId = biome.id;
+    this.emit('biomeChanged', biome);
   }
 
   public recordBlockBroken(): void {
@@ -400,6 +471,9 @@ export class GameStateManager {
     this.runBlocksBroken = 0;
     this.explosiveCharge = 0;
     this.playerHp = PLAYER_MAX_HP;
+    this.lastMilestone = 0;
+    this.recordCelebratedThisRun = false;
+    this.lastBiomeId = 'topsoil';
     this.emit('depthChanged', 0);
     this.emit('playerHpChanged', this.playerHp);
   }

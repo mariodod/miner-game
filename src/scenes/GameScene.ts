@@ -3,10 +3,11 @@ import { Block } from '../entities/Block';
 import { Player } from '../entities/Player';
 import { Enemy } from '../entities/Enemy';
 import { Collectible, CollectibleKind } from '../entities/Collectible';
-import { GameState, PLAYER_MAX_HP } from '../core/GameState';
+import { GameState, PLAYER_MAX_HP, DepthMilestoneInfo, NewRecordInfo } from '../core/GameState';
 import { Ads } from '../core/AdManager';
 import { PICKAXES_CONFIG, PickaxeType } from '../config/pickaxes';
 import { BLOCKS_CONFIG, getRandomBlockForDepth } from '../config/blocks';
+import { BiomeDef, getBiomeForDepth } from '../config/biomes';
 import { shouldEnemySpawn, getRandomEnemyForDepth, ENEMIES_CONFIG } from '../config/enemies';
 import { Sound } from '../core/SoundManager';
 import { freeze, shake, tickFreeze } from '../core/Juice';
@@ -59,6 +60,11 @@ export class GameScene extends Phaser.Scene {
   // Particle emitter
   private particles!: Phaser.GameObjects.Particles.ParticleEmitter;
 
+  // Biome wash + celebration visuals
+  private biomeOverlay!: Phaser.GameObjects.Rectangle;
+  private confetti!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private bannerText: Phaser.GameObjects.Text | null = null;
+
   constructor() {
     super('GameScene');
   }
@@ -96,6 +102,14 @@ export class GameScene extends Phaser.Scene {
     // Bedrock side walls
     this.drawSideWalls(width, bgHeight);
 
+    // Biome colour wash (viewport-fixed, tweened when a band changes)
+    this.biomeOverlay = this.add
+      .rectangle(0, 0, width, this.scale.height, 0x000000, 0)
+      .setOrigin(0)
+      .setScrollFactor(0)
+      .setDepth(-9);
+    this.applyBiome(getBiomeForDepth(0), false);
+
     // Setup particles
     this.particles = this.add.particles(0, 0, 'particle_dust', {
       speed: { min: 40, max: 100 },
@@ -107,6 +121,19 @@ export class GameScene extends Phaser.Scene {
       gravityY: 200,
     });
     this.particles.setDepth(50);
+
+    // Confetti for records / big moments
+    this.confetti = this.add.particles(0, 0, 'particle_dust', {
+      speed: { min: 120, max: 260 },
+      angle: { min: 210, max: 330 },
+      scale: { start: 1.1, end: 0 },
+      lifespan: { min: 600, max: 1100 },
+      quantity: 0,
+      emitting: false,
+      gravityY: 380,
+      tint: [0xfde047, 0x38bdf8, 0xf87171, 0x4ade80, 0xffffff],
+    });
+    this.confetti.setDepth(60);
 
     // Generate initial chunks
     this.generateChunk(0, CHUNK_SIZE + VISIBLE_ROWS);
@@ -129,6 +156,14 @@ export class GameScene extends Phaser.Scene {
     this.input.on('pointerdown', this.onPointerDown, this);
     this.input.on('pointermove', this.onPointerMove, this);
     this.input.on('pointerup', this.onPointerUp, this);
+
+    // Depth celebrations (milestone chests, records, biome changes)
+    const unsubs = [
+      GameState.on('depthMilestone', (info: DepthMilestoneInfo) => this.onDepthMilestone(info)),
+      GameState.on('newRecord', (info: NewRecordInfo) => this.onNewRecord(info)),
+      GameState.on('biomeChanged', (biome: BiomeDef) => this.applyBiome(biome, true)),
+    ];
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => unsubs.forEach((unsub) => unsub()));
 
     // Keyboard shortcut (desktop fallback)
     this.input.keyboard?.on('keydown', (event: KeyboardEvent) => {
@@ -1121,6 +1156,126 @@ export class GameScene extends Phaser.Scene {
       duration: 900,
       ease: 'Power1',
       onComplete: () => t.destroy(),
+    });
+  }
+
+  // ─── Depth Celebrations ──────────────────────────────────────────────────
+
+  /** Applies a biome's background wash (and announces it when animated). */
+  private applyBiome(biome: BiomeDef, animate: boolean): void {
+    this.biomeOverlay.setFillStyle(biome.wash);
+    if (!animate) {
+      this.biomeOverlay.setAlpha(biome.washAlpha);
+      return;
+    }
+    this.tweens.add({
+      targets: this.biomeOverlay,
+      alpha: biome.washAlpha,
+      duration: 700,
+      ease: 'Quad.easeOut',
+    });
+
+    // Let an in-flight banner (record, another biome) finish first.
+    const delay = this.bannerText ? 1400 : 0;
+    this.time.delayedCall(delay, () => {
+      this.showBanner(biome.name, `Depth ${GameState.currentDepth}m`, biome.accent);
+    });
+  }
+
+  /** Pops open a reward chest with the milestone payout. */
+  private onDepthMilestone(info: DepthMilestoneInfo): void {
+    const cx = this.player.x;
+    const cy = this.player.y - 46;
+
+    const chest = this.add.sprite(cx, cy, 'reward_chest').setDepth(150).setScale(0);
+    this.tweens.add({ targets: chest, scale: 1.4, duration: 240, ease: 'Back.easeOut' });
+
+    Sound.play('level_up');
+    GameState.triggerHaptic(50);
+    shake(this, 140, 0.0035);
+    freeze(this, 40);
+    this.particles.setPosition(cx, cy);
+    this.particles.setParticleTint(0xfde047);
+    this.particles.explode(10);
+
+    const prefix = info.count > 1 ? `x${info.count} ` : '';
+    this.spawnFloatingText(cx, cy - 36, `${prefix}🎁 ${info.depth}m: +${info.gold}💰 +${info.diamonds}💎`, '#fde047');
+
+    // The chest pops a moment later: drops carry the payout to the HUD,
+    // exactly like ore drops (currency is credited on arrival / run flush).
+    this.time.delayedCall(300, () => {
+      this.spawnGoldDrops(cx, cy - 8, info.gold);
+      this.spawnDiamondDrops(cx, cy - 8, info.diamonds);
+      if (GameState.playerHp < PLAYER_MAX_HP) {
+        this.spawnCollectible(cx, cy - 8, 'heart', 1, true);
+      }
+      this.tweens.add({
+        targets: chest,
+        alpha: 0,
+        y: cy - 18,
+        duration: 420,
+        onComplete: () => chest.destroy(),
+      });
+    });
+  }
+
+  /** Celebrates beating the previous best depth mid-run. */
+  private onNewRecord(info: NewRecordInfo): void {
+    this.showBanner('🏆 NEW RECORD!', `Best: ${info.depth}m`, '#fde047');
+    Sound.play('record');
+    GameState.triggerHaptic(60);
+    freeze(this, 70);
+    shake(this, 220, 0.004);
+
+    this.confettiBurst();
+    this.time.delayedCall(180, () => this.confettiBurst());
+  }
+
+  private confettiBurst(): void {
+    this.confetti.setPosition(this.player.x, this.player.y - 60);
+    this.confetti.explode(18);
+  }
+
+  /** Big centered announcement (biome arrivals, records). */
+  private showBanner(main: string, sub: string | null, color: string): void {
+    const { width } = this.scale;
+
+    if (this.bannerText) {
+      this.tweens.killTweensOf(this.bannerText);
+      this.bannerText.destroy();
+      this.bannerText = null;
+    }
+
+    const banner = this.add
+      .text(width / 2, 168, sub ? `${main}\n${sub}` : main, {
+        fontSize: sub ? '24px' : '26px',
+        fontStyle: 'bold',
+        color,
+        align: 'center',
+        backgroundColor: 'rgba(15, 23, 42, 0.92)',
+        padding: { x: 16, y: 10 },
+        stroke: '#020617',
+        strokeThickness: 2,
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(1500)
+      .setScale(0.5)
+      .setAlpha(0);
+    this.bannerText = banner;
+
+    this.tweens.add({ targets: banner, scale: 1, alpha: 1, duration: 260, ease: 'Back.easeOut' });
+    this.tweens.add({
+      targets: banner,
+      alpha: 0,
+      y: 148,
+      delay: 1500,
+      duration: 420,
+      ease: 'Quad.easeIn',
+      onComplete: () => {
+        if (this.bannerText === banner) this.bannerText = null;
+        banner.destroy();
+      },
     });
   }
 

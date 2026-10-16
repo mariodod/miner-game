@@ -176,6 +176,23 @@ export class BootScene extends Phaser.Scene {
       g.destroy();
     }
 
+    // Reward Chest (depth milestones)
+    {
+      const g = this.make.graphics({ x: 0, y: 0 });
+      g.fillStyle(0xd97706, 1);
+      g.fillRoundedRect(2, 8, 20, 13, 3);
+      g.fillStyle(0xfbbf24, 1);
+      g.fillRoundedRect(2, 4, 20, 8, 3);
+      g.fillStyle(0x7c2d12, 1);
+      g.fillRect(10, 4, 4, 17);
+      g.fillStyle(0xfef3c7, 1);
+      g.fillRect(10, 10, 4, 4);
+      g.lineStyle(1.5, 0x451a03, 1);
+      g.strokeRoundedRect(2, 4, 20, 17, 3);
+      g.generateTexture('reward_chest', 24, 24);
+      g.destroy();
+    }
+
     // 4. Generate Particle Texture
     {
       const g = this.make.graphics({ x: 0, y: 0 });

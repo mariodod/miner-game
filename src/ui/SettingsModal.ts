@@ -133,7 +133,7 @@ export class SettingsModal {
       () => GameState.hapticsEnabled,
       () => {
         const on = GameState.toggleHaptics();
-        if (on) GameState.triggerHaptic(20); // feel the switch flip back on
+        if (on) GameState.haptic('tap'); // feel the switch flip back on
         return on;
       }
     );

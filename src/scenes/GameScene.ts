@@ -193,7 +193,7 @@ export class GameScene extends Phaser.Scene {
           giveUpArmed = true;
           giveUp.text.setText('Tap again').setColor('#ffffff');
           giveUp.redraw(0xb91c1c, 0xfca5a5);
-          GameState.triggerHaptic(15);
+          GameState.haptic('tap');
           if (giveUpTimer) giveUpTimer.remove();
           giveUpTimer = this.time.delayedCall(2200, () => {
             giveUpArmed = false;
@@ -354,7 +354,7 @@ export class GameScene extends Phaser.Scene {
     if (this.time.now < this.invulnUntil) return;
 
     GameState.setPlayerHp(GameState.playerHp - damage);
-    GameState.triggerHaptic(40);
+    GameState.haptic('heavy');
     this.cameras.main.shake(120, 0.004);
     this.cameras.main.flash(160, 190, 30, 30);
     this.spawnFloatingText(this.player.x, this.player.y - 34, `-${damage}`, '#f87171');
@@ -522,7 +522,7 @@ export class GameScene extends Phaser.Scene {
 
     GameState.setPlayerHp(PLAYER_MAX_HP);
     this.invulnUntil = this.time.now + 3000;
-    GameState.triggerHaptic(30);
+    GameState.haptic('success');
     if (GameState.soundEnabled) Sound.play('level_up');
 
     if (this.collapseObjects.length > 0) {
@@ -712,7 +712,7 @@ export class GameScene extends Phaser.Scene {
       blockWorldX,
       () => {
         this.applyHit(block, col, row, pickaxeConfig.type);
-        GameState.triggerHaptic(20);
+        GameState.haptic(block.isBroken ? 'break' : 'hit');
         this.isMining = false;
       },
       GameState.swingSpeedMultiplier
@@ -850,7 +850,7 @@ export class GameScene extends Phaser.Scene {
     const cy = row * BLOCK_SIZE + BLOCK_SIZE / 2;
 
     if (GameState.soundEnabled) Sound.play('explosion');
-    GameState.triggerHaptic(40);
+    GameState.haptic('heavy');
     freeze(this, 80);
     shake(this, 240, 0.006);
 
@@ -959,7 +959,7 @@ export class GameScene extends Phaser.Scene {
     // Treasure chests pop with a golden flourish
     if (block.blockType === 'treasure') {
       if (GameState.soundEnabled) Sound.play('treasure');
-      GameState.triggerHaptic(30);
+      GameState.haptic('success');
       freeze(this, 40);
       this.particles.setPosition(worldX, worldY);
       this.particles.setParticleTint(0xfbbf24);
@@ -1093,7 +1093,7 @@ export class GameScene extends Phaser.Scene {
         if (result.dead) {
           this.onEnemyKilled(enemy, enemy.gridX, enemy.gridY, result.gold || 0, result.diamonds || 0);
         } else {
-          GameState.triggerHaptic(15);
+          GameState.haptic('hit');
         }
 
         this.isAttacking = false;
@@ -1116,6 +1116,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private onEnemyKilled(enemy: Enemy, col: number, row: number, gold: number, diamonds: number): void {
+    GameState.recordEnemyDefeated();
     const worldX = col * BLOCK_SIZE + BLOCK_SIZE / 2;
     const worldY = row * BLOCK_SIZE + BLOCK_SIZE / 2;
 
@@ -1146,7 +1147,7 @@ export class GameScene extends Phaser.Scene {
     if (enemy.isElite) {
       this.showBanner('💀 ELITE DOWN!', `${enemy.config.name} defeated`, '#fbbf24');
       this.confettiBurst(worldX, worldY - 20, 22);
-      GameState.triggerHaptic(50);
+      GameState.haptic('success');
     }
   }
 
@@ -1330,7 +1331,7 @@ export class GameScene extends Phaser.Scene {
     this.tweens.add({ targets: chest, scale: 1.4, duration: 240, ease: 'Back.easeOut' });
 
     Sound.play('level_up');
-    GameState.triggerHaptic(50);
+    GameState.haptic('success');
     shake(this, 140, 0.0035);
     freeze(this, 40);
     this.particles.setPosition(cx, cy);
@@ -1362,7 +1363,7 @@ export class GameScene extends Phaser.Scene {
   private onNewRecord(info: NewRecordInfo): void {
     this.showBanner('🏆 NEW RECORD!', `Best: ${info.depth}m`, '#fde047');
     Sound.play('record');
-    GameState.triggerHaptic(60);
+    GameState.haptic('success');
     freeze(this, 70);
     shake(this, 220, 0.004);
 
@@ -1407,7 +1408,7 @@ export class GameScene extends Phaser.Scene {
     this.particles.explode(16);
     this.showBanner(`👑 ${ENEMIES_CONFIG[enemyType].name}!`, `Elite guard at ${info.depth}m`, '#fbbf24');
     if (GameState.soundEnabled) Sound.play('boss');
-    GameState.triggerHaptic(60);
+    GameState.haptic('heavy');
     shake(this, 200, 0.004);
     freeze(this, 60);
   }

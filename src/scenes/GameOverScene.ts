@@ -14,6 +14,7 @@ export class GameOverScene extends Phaser.Scene {
     const gold = GameState.runGoldCollected;
     const diamonds = GameState.runDiamondsCollected;
     const blocks = GameState.runBlocksBroken;
+    const enemies = GameState.runEnemiesDefeated;
     const isHighScore = depth > 0 && depth >= GameState.highScoreDepth;
 
     // Play game over or level up sound
@@ -81,6 +82,7 @@ export class GameOverScene extends Phaser.Scene {
       { icon: '💰', label: 'Gold Collected', value: `${gold}` },
       { icon: '💎', label: 'Diamonds Found', value: `${diamonds}` },
       { icon: '🪨', label: 'Blocks Broken', value: `${blocks}` },
+      { icon: '💀', label: 'Enemies Defeated', value: `${enemies}` },
     ];
 
     stats.forEach((stat, i) => {

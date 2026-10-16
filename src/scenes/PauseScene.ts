@@ -77,7 +77,7 @@ export class PauseScene extends Phaser.Scene {
         .text(
           width / 2,
           panelY + 62,
-          `Depth ${GameState.currentDepth}m · 💰 ${GameState.runGoldCollected} this run`,
+          `📍 ${GameState.currentDepth}m · 💰 ${GameState.runGoldCollected} · 🪨 ${GameState.runBlocksBroken} · 💀 ${GameState.runEnemiesDefeated}`,
           { fontSize: '12px', color: '#94a3b8' }
         )
         .setOrigin(0.5),

@@ -53,6 +53,18 @@ export interface BossSpawnInfo {
   tier: number;
 }
 
+/** Semantic haptic cues — mapped to graded patterns per platform. */
+export type HapticCue = 'tap' | 'hit' | 'break' | 'heavy' | 'success';
+
+/** Web-fallback vibration patterns per cue (ms, or on/off pattern). */
+const WEB_VIBRATE_PATTERNS: Record<HapticCue, number | number[]> = {
+  tap: 10,
+  hit: 18,
+  break: 30,
+  heavy: 55,
+  success: [25, 60, 25],
+};
+
 export class GameStateManager {
   private static instance: GameStateManager;
 
@@ -64,6 +76,7 @@ export class GameStateManager {
   public runGoldCollected: number = 0;
   public runDiamondsCollected: number = 0;
   public runBlocksBroken: number = 0;
+  public runEnemiesDefeated: number = 0;
   public explosiveCharge: number = 0; // For explosive pickaxe counter
   public playerHp: number = PLAYER_MAX_HP; // Transient run health
 
@@ -339,6 +352,10 @@ export class GameStateManager {
     this.runBlocksBroken++;
   }
 
+  public recordEnemyDefeated(): void {
+    this.runEnemiesDefeated++;
+  }
+
   /** Updates the transient run HP and notifies the HUD. */
   public setPlayerHp(value: number): void {
     this.playerHp = Math.max(0, Math.min(PLAYER_MAX_HP, Math.round(value)));
@@ -479,34 +496,52 @@ export class GameStateManager {
     this.emit('tutorialDoneChanged', false);
   }
 
-  public triggerHaptic(durationMs: number = 25): void {
+  /** Fires a graded haptic cue (no-op while vibration is disabled). */
+  public haptic(cue: HapticCue = 'tap'): void {
     if (!this.data.hapticsEnabled) return;
 
     // Native app: use the Capacitor haptics engine (the vibrate API is
     // unreliable inside the Android WebView).
     if (Capacitor.isNativePlatform()) {
-      void this.vibrateNative(durationMs);
+      void this.vibrateNative(cue);
       return;
     }
 
     if (typeof window !== 'undefined' && 'navigator' in window && 'vibrate' in navigator) {
       try {
-        navigator.vibrate(durationMs);
+        navigator.vibrate(WEB_VIBRATE_PATTERNS[cue]);
       } catch {
         // Ignore fallback
       }
     }
   }
 
-  private async vibrateNative(durationMs: number): Promise<void> {
+  private async vibrateNative(cue: HapticCue): Promise<void> {
     try {
       if (!this.hapticsModule) {
         this.hapticsModule = await import('@capacitor/haptics');
       }
-      const { Haptics, ImpactStyle } = this.hapticsModule;
-      await Haptics.impact({
-        style: durationMs >= 30 ? ImpactStyle.Medium : ImpactStyle.Light,
-      });
+      const { Haptics, ImpactStyle, NotificationType } = this.hapticsModule;
+
+      switch (cue) {
+        case 'success':
+          // Distinct double-pulse celebration (milestones, records, rewards)
+          await Haptics.notification({ type: NotificationType.Success });
+          break;
+        case 'heavy':
+          await Haptics.impact({ style: ImpactStyle.Heavy });
+          break;
+        case 'break':
+          await Haptics.impact({ style: ImpactStyle.Medium });
+          break;
+        case 'hit':
+          await Haptics.vibrate({ duration: 18 });
+          break;
+        case 'tap':
+        default:
+          await Haptics.impact({ style: ImpactStyle.Light });
+          break;
+      }
     } catch {
       // Haptics are best-effort only.
     }
@@ -517,6 +552,7 @@ export class GameStateManager {
     this.runGoldCollected = 0;
     this.runDiamondsCollected = 0;
     this.runBlocksBroken = 0;
+    this.runEnemiesDefeated = 0;
     this.explosiveCharge = 0;
     this.playerHp = PLAYER_MAX_HP;
     this.lastMilestone = 0;

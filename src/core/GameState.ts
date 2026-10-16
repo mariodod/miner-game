@@ -1,5 +1,5 @@
 import { PickaxeId, PICKAXES_CONFIG } from '../config/pickaxes';
-import { SKINS_CONFIG } from '../config/economy';
+import { SKINS_CONFIG, UPGRADES_CONFIG, UpgradeId, getUpgradeCost } from '../config/economy';
 
 export interface GameSaveData {
   gold: number;
@@ -9,6 +9,7 @@ export interface GameSaveData {
   unlockedPickaxes: PickaxeId[];
   equippedSkin: string;
   unlockedSkins: string[];
+  upgrades: Record<UpgradeId, number>;
   soundEnabled: boolean;
   hapticsEnabled: boolean;
 }
@@ -50,6 +51,7 @@ export class GameStateManager {
       unlockedPickaxes: ['wood'],
       equippedSkin: 'classic',
       unlockedSkins: ['classic'],
+      upgrades: { power: 0, speed: 0, fortune: 0 },
       soundEnabled: true,
       hapticsEnabled: true,
     };
@@ -60,9 +62,11 @@ export class GameStateManager {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
+        const defaults = this.getDefaultData();
         return {
-          ...this.getDefaultData(),
+          ...defaults,
           ...parsed,
+          upgrades: { ...defaults.upgrades, ...(parsed.upgrades ?? {}) },
         };
       }
     } catch (e) {
@@ -129,6 +133,36 @@ export class GameStateManager {
 
   public get unlockedSkins(): string[] {
     return [...this.data.unlockedSkins];
+  }
+
+  public get upgradeLevels(): Record<UpgradeId, number> {
+    return { ...this.data.upgrades };
+  }
+
+  public getUpgradeLevel(id: UpgradeId): number {
+    return this.data.upgrades[id] ?? 0;
+  }
+
+  /** Gold cost of the next upgrade level, or null when the track is maxed. */
+  public getUpgradeCost(id: UpgradeId): number | null {
+    const config = UPGRADES_CONFIG.find((u) => u.id === id);
+    if (!config) return null;
+    return getUpgradeCost(config, this.getUpgradeLevel(id));
+  }
+
+  /** Pickaxe efficiency including the Power upgrade bonus. */
+  public getEffectiveEfficiency(baseEfficiency: number): number {
+    return baseEfficiency + this.getUpgradeLevel('power');
+  }
+
+  /** Swing animation speed multiplier from the Speed upgrade. */
+  public get swingSpeedMultiplier(): number {
+    return 1 + this.getUpgradeLevel('speed') * 0.08;
+  }
+
+  /** Gold multiplier from the Fortune upgrade. */
+  public get goldMultiplier(): number {
+    return 1 + this.getUpgradeLevel('fortune') * 0.1;
   }
 
   public get soundEnabled(): boolean {
@@ -247,6 +281,23 @@ export class GameStateManager {
       return true;
     }
     return false;
+  }
+
+  /** Buys the next level of an incremental pickaxe upgrade with gold. */
+  public purchaseUpgrade(id: UpgradeId): boolean {
+    const config = UPGRADES_CONFIG.find((u) => u.id === id);
+    if (!config) return false;
+
+    const level = this.getUpgradeLevel(id);
+    const cost = getUpgradeCost(config, level);
+    if (cost === null || this.data.gold < cost) return false;
+
+    this.data.gold -= cost;
+    this.data.upgrades[id] = level + 1;
+    this.save();
+    this.emit('goldChanged', this.data.gold);
+    this.emit('upgradesChanged', this.upgradeLevels);
+    return true;
   }
 
   public toggleSound(): boolean {

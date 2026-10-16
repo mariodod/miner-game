@@ -18,6 +18,9 @@ const config: Phaser.Types.Core.GameConfig = {
   },
   backgroundColor: '#0f172a',
   scene: [BootScene, MenuScene, GameScene, GameOverScene, ShopScene, HUDScene],
+  physics: {
+    default: 'arcade', // Enemy entities attach arcade bodies (AI itself is tween-driven)
+  },
   input: {
     activePointers: 2, // Multi-touch support
   },
@@ -28,7 +31,15 @@ const config: Phaser.Types.Core.GameConfig = {
   },
 };
 
-new Phaser.Game(config);
+const game = new Phaser.Game(config);
+
+// Handy debug/testing handle (kept intentionally: exposes the game instance)
+declare global {
+  interface Window {
+    __game?: Phaser.Game;
+  }
+}
+window.__game = game;
 
 // Initialize sound on first user interaction (required by browser autoplay policy)
 let soundInitialized = false;

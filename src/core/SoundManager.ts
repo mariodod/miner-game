@@ -11,6 +11,7 @@ export type SoundEffect =
   | 'pickaxe_swing'
   | 'pickaxe_equip'
   | 'shop_buy'
+  | 'upgrade_buy'
   | 'shop_cannot_afford'
   | 'level_up'
   | 'explosion'
@@ -85,6 +86,15 @@ const SOUND_PRESETS: Record<SoundEffect, SoundConfig> = {
     volume: 0.18,
     attack: 0.01,
     decay: 0.25,
+  },
+  upgrade_buy: {
+    type: 'triangle',
+    frequency: [392, 523, 659, 880],
+    duration: 0.4,
+    volume: 0.2,
+    attack: 0.01,
+    decay: 0.32,
+    pitchSlide: 2,
   },
   shop_cannot_afford: {
     type: 'square',

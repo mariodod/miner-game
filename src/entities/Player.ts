@@ -11,6 +11,7 @@ export class Player extends Phaser.GameObjects.Container {
   private minerSprite: Phaser.GameObjects.Sprite;
   private pickaxeSprite: Phaser.GameObjects.Sprite;
   private lampGlow: Phaser.GameObjects.Arc;
+  private pickaxeUnsub: (() => void) | null = null;
   private skinUnsub: (() => void) | null = null;
   private currentSkinId: string = 'classic';
 
@@ -46,7 +47,7 @@ export class Player extends Phaser.GameObjects.Container {
     scene.add.existing(this);
 
     // Listen for pickaxe change
-    GameState.on('pickaxeChanged', (newPickaxe: PickaxeId) => {
+    this.pickaxeUnsub = GameState.on('pickaxeChanged', (newPickaxe: PickaxeId) => {
       this.updatePickaxeTexture(newPickaxe);
     });
 
@@ -147,11 +148,23 @@ export class Player extends Phaser.GameObjects.Container {
   }
 
   /**
-   * Snappy mining swing animation
+   * Snappy mining swing animation.
+   * @param speedMultiplier Scales animation durations (higher = faster swings).
+   * @returns false when a swing is already in progress (caller should abort).
    */
-  public playSwingAnimation(targetX: number, onImpact?: () => void): void {
-    if (this.isSwinging) return;
+  public playSwingAnimation(
+    targetX: number,
+    onImpact: () => void,
+    speedMultiplier: number = 1
+  ): boolean {
+    if (this.isSwinging) return false;
     this.isSwinging = true;
+
+    const mult = Math.max(0.1, speedMultiplier);
+    const windupMs = Math.round(50 / mult);
+    const strikeMs = Math.round(65 / mult);
+    const recoverMs = Math.round(80 / mult);
+    const hopMs = Math.round(60 / mult);
 
     if (targetX < this.x) {
       this.setFacingDirection('left');
@@ -167,13 +180,13 @@ export class Player extends Phaser.GameObjects.Container {
     this.scene.tweens.add({
       targets: this.pickaxeSprite,
       angle: windupAngle,
-      duration: 50,
+      duration: windupMs,
       ease: 'Quad.easeOut',
       onComplete: () => {
         this.scene.tweens.add({
           targets: this.pickaxeSprite,
           angle: strikeAngle,
-          duration: 65,
+          duration: strikeMs,
           ease: 'Back.easeIn',
           onComplete: () => {
             if (onImpact) onImpact();
@@ -181,7 +194,7 @@ export class Player extends Phaser.GameObjects.Container {
             this.scene.tweens.add({
               targets: this.pickaxeSprite,
               angle: 0,
-              duration: 80,
+              duration: recoverMs,
               ease: 'Quad.easeOut',
               onComplete: () => {
                 this.isSwinging = false;
@@ -196,10 +209,12 @@ export class Player extends Phaser.GameObjects.Container {
     this.scene.tweens.add({
       targets: this.minerSprite,
       y: -4,
-      duration: 60,
+      duration: hopMs,
       yoyo: true,
       ease: 'Quad.easeInOut',
     });
+
+    return true;
   }
 
   /**
@@ -228,6 +243,10 @@ export class Player extends Phaser.GameObjects.Container {
   }
 
   public destroy(fromScene?: boolean): void {
+    if (this.pickaxeUnsub) {
+      this.pickaxeUnsub();
+      this.pickaxeUnsub = null;
+    }
     if (this.skinUnsub) {
       this.skinUnsub();
       this.skinUnsub = null;

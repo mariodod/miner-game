@@ -203,6 +203,8 @@ export class Enemy extends Phaser.GameObjects.Container {
   }
 
   private setupPhysics(): void {
+    // Guard: arcade physics may be unavailable if the game config changes.
+    if (!this.scene.physics) return;
     this.scene.physics.add.existing(this);
     const body = this.body as Phaser.Physics.Arcade.Body;
     if (body) {

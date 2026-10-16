@@ -1,6 +1,14 @@
 import Phaser from 'phaser';
 import { GameState } from '../core/GameState';
 import { PICKAXES_CONFIG, PickaxeId } from '../config/pickaxes';
+import { Sound } from '../core/SoundManager';
+
+/**
+ * Screen-space positions of the HUD currency counters.
+ * GameScene uses these as homing targets for collectible drops.
+ */
+export const HUD_GOLD_POS = { x: 125, y: 34 };
+export const HUD_DIAMOND_POS = { x: 225, y: 34 };
 
 export class HUD extends Phaser.GameObjects.Container {
   private depthText: Phaser.GameObjects.Text;
@@ -40,7 +48,7 @@ export class HUD extends Phaser.GameObjects.Container {
     this.add(this.depthText);
 
     // Gold Counter
-    const goldIcon = scene.add.sprite(125, 34, 'coin_icon');
+    const goldIcon = scene.add.sprite(HUD_GOLD_POS.x, HUD_GOLD_POS.y, 'coin_icon');
     goldIcon.setScale(0.8);
     this.goldText = scene.add.text(142, 24, `${GameState.gold}`, {
       fontSize: '15px',
@@ -51,7 +59,7 @@ export class HUD extends Phaser.GameObjects.Container {
     this.add(this.goldText);
 
     // Diamond Counter
-    const gemIcon = scene.add.sprite(225, 34, 'diamond_icon');
+    const gemIcon = scene.add.sprite(HUD_DIAMOND_POS.x, HUD_DIAMOND_POS.y, 'diamond_icon');
     gemIcon.setScale(0.8);
     this.diamondText = scene.add.text(242, 24, `${GameState.diamonds}`, {
       fontSize: '15px',
@@ -73,7 +81,7 @@ export class HUD extends Phaser.GameObjects.Container {
     this.pickaxeBadge.add(this.pickaxeIcon);
 
     this.pickaxeLabel = scene.add
-      .text(0, 22, `Lvl ${currentPickaxeConfig.efficiency}`, {
+      .text(0, 22, `⚡ ${GameState.getEffectiveEfficiency(currentPickaxeConfig.efficiency)}`, {
         fontSize: '9px',
         color: '#94a3b8',
         fontStyle: 'bold',
@@ -81,9 +89,12 @@ export class HUD extends Phaser.GameObjects.Container {
       .setOrigin(0.5);
     this.pickaxeBadge.add(this.pickaxeLabel);
 
+    // Tap the badge to open the Shop; pause the run so it resumes after.
     badgeBg.setInteractive({ useHandCursor: true });
     badgeBg.on('pointerdown', () => {
-      this.scene.scene.start('ShopScene');
+      if (GameState.soundEnabled) Sound.play('ui_click');
+      this.scene.scene.pause('GameScene');
+      this.scene.scene.start('ShopScene', { returnTo: 'game' });
     });
 
     this.add(this.pickaxeBadge);
@@ -115,7 +126,14 @@ export class HUD extends Phaser.GameObjects.Container {
       GameState.on('pickaxeChanged', (pickaxeId: PickaxeId) => {
         const pConfig = PICKAXES_CONFIG[pickaxeId];
         this.pickaxeIcon.setTexture(`pickaxe_${pickaxeId}`);
-        this.pickaxeLabel.setText(`Lvl ${pConfig.efficiency}`);
+        this.pickaxeLabel.setText(`⚡ ${GameState.getEffectiveEfficiency(pConfig.efficiency)}`);
+      })
+    );
+
+    this.unsubs.push(
+      GameState.on('upgradesChanged', () => {
+        const pConfig = PICKAXES_CONFIG[GameState.equippedPickaxe];
+        this.pickaxeLabel.setText(`⚡ ${GameState.getEffectiveEfficiency(pConfig.efficiency)}`);
       })
     );
   }

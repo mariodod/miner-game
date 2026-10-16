@@ -2,11 +2,13 @@ import Phaser from 'phaser';
 import { Block } from '../entities/Block';
 import { Player } from '../entities/Player';
 import { Enemy } from '../entities/Enemy';
+import { Collectible, CollectibleKind } from '../entities/Collectible';
 import { GameState } from '../core/GameState';
 import { PICKAXES_CONFIG, PickaxeType } from '../config/pickaxes';
 import { getRandomBlockForDepth } from '../config/blocks';
 import { shouldEnemySpawn, getRandomEnemyForDepth, ENEMIES_CONFIG } from '../config/enemies';
 import { Sound } from '../core/SoundManager';
+import { HUD_GOLD_POS, HUD_DIAMOND_POS } from '../ui/HUD';
 
 // ── Grid Constants ──────────────────────────────────────────────────────────
 const COLS = 7;
@@ -22,6 +24,7 @@ export class GameScene extends Phaser.Scene {
   // Entities
   private player!: Player;
   private enemies: Map<string, Enemy> = new Map();
+  private collectibles: Collectible[] = [];
 
   // State
   private isMining: boolean = false;
@@ -40,6 +43,16 @@ export class GameScene extends Phaser.Scene {
 
   create() {
     const { width } = this.scale;
+
+    // Reset all run-scoped state (scene instances persist across restarts,
+    // and shut-down scenes destroy their game objects).
+    this.blocks.clear();
+    this.enemies.clear();
+    this.collectibles = [];
+    this.generatedRows = 0;
+    this.isMining = false;
+    this.isAttacking = false;
+    this.explosiveHitCount = 0;
 
     GameState.startNewRun();
 
@@ -91,9 +104,9 @@ export class GameScene extends Phaser.Scene {
       if (event.code === 'Escape') this.endRun();
     });
 
-    // "Give Up" button — fixed to viewport
+    // "Give Up" button — fixed to viewport, below the HUD banner
     this.add
-      .text(width - 8, 8, '🏳 Give Up', {
+      .text(width - 8, 66, '🏳 Give Up', {
         fontSize: '12px',
         color: '#f87171',
         backgroundColor: '#0f172a',
@@ -104,9 +117,30 @@ export class GameScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => this.endRun());
+
+    // When returning from the shop mid-run, refresh block HP for the
+    // (possibly upgraded) pickaxe efficiency.
+    this.events.on(Phaser.Scenes.Events.RESUME, () => {
+      const efficiency = this.currentEfficiency();
+      for (const block of this.blocks.values()) {
+        block.updatePickaxeEfficiency(efficiency);
+      }
+    });
+
+    // Never lose un-collected drops, no matter how the scene exits.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.flushCollectibles();
+    });
+  }
+
+  /** Pickaxe efficiency including incremental Power upgrades. */
+  private currentEfficiency(): number {
+    const base = PICKAXES_CONFIG[GameState.equippedPickaxe].efficiency;
+    return GameState.getEffectiveEfficiency(base);
   }
 
   private endRun(): void {
+    this.flushCollectibles();
     this.scene.stop('HUDScene');
     this.scene.start('GameOverScene');
   }
@@ -122,7 +156,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private generateChunk(startRow: number, endRow: number): void {
-    const efficiency = PICKAXES_CONFIG[GameState.equippedPickaxe].efficiency;
+    const efficiency = this.currentEfficiency();
 
     for (let row = startRow; row < endRow; row++) {
       for (let col = 0; col < COLS; col++) {
@@ -218,16 +252,26 @@ export class GameScene extends Phaser.Scene {
     const blockWorldX = col * BLOCK_SIZE + BLOCK_SIZE / 2;
     const pickaxeConfig = PICKAXES_CONFIG[GameState.equippedPickaxe];
 
+    const started = this.player.playSwingAnimation(
+      blockWorldX,
+      () => {
+        this.applyHit(block, col, row, pickaxeConfig.type);
+        GameState.triggerHaptic(20);
+        this.isMining = false;
+      },
+      GameState.swingSpeedMultiplier
+    );
+
+    if (!started) {
+      // A previous swing is still recovering — abort cleanly.
+      this.isMining = false;
+      return;
+    }
+
     // Play swing sound
     if (GameState.soundEnabled) {
       Sound.play('pickaxe_swing');
     }
-
-    this.player.playSwingAnimation(blockWorldX, () => {
-      this.applyHit(block, col, row, pickaxeConfig.type);
-      GameState.triggerHaptic(20);
-      this.isMining = false;
-    });
   }
 
   // ─── Hit Logic & AOE ─────────────────────────────────────────────────────
@@ -359,16 +403,18 @@ export class GameScene extends Phaser.Scene {
     // Chance to spawn enemy when breaking block
     this.trySpawnEnemy(col, row, block.blockType);
 
-    // Collect rewards
-    if (gold > 0) {
-      GameState.addGold(gold);
-      this.spawnFloatingText(worldX, worldY, `+${gold}💰`, '#facc15');
-      if (GameState.soundEnabled) Sound.play('gold_collect');
+    // Fortune upgrade multiplies ore gold
+    const boostedGold = gold > 0 ? Math.round(gold * GameState.goldMultiplier) : 0;
+
+    // Spawn physical drops that fly to the HUD counter. Currency is only
+    // credited once each drop arrives (see update()).
+    if (boostedGold > 0) {
+      this.spawnGoldDrops(worldX, worldY, boostedGold);
+      this.spawnFloatingText(worldX, worldY, `+${boostedGold}💰`, '#facc15');
     }
     if (diamonds > 0) {
-      GameState.addDiamonds(diamonds);
+      this.spawnDiamondDrops(worldX, worldY, diamonds);
       this.spawnFloatingText(worldX, worldY - 20, `+${diamonds}💎`, '#38bdf8');
-      if (GameState.soundEnabled) Sound.play('diamond_collect');
     }
 
     // Check if player can fall into broken space below
@@ -402,7 +448,8 @@ export class GameScene extends Phaser.Scene {
     const depth = row * 3;
     if (!shouldEnemySpawn(blockType as any, depth)) return;
 
-    const enemyType = getRandomEnemyForDepth(depth, PICKAXES_CONFIG[GameState.equippedPickaxe].efficiency);
+    const efficiency = this.currentEfficiency();
+    const enemyType = getRandomEnemyForDepth(depth, efficiency);
     if (!enemyType) return;
 
     const key = this.enemyKey(col, row);
@@ -411,7 +458,7 @@ export class GameScene extends Phaser.Scene {
     const x = col * BLOCK_SIZE + BLOCK_SIZE / 2;
     const y = row * BLOCK_SIZE + BLOCK_SIZE / 2;
 
-    const enemy = new Enemy(this, x, y, col, row, enemyType, PICKAXES_CONFIG[GameState.equippedPickaxe].efficiency);
+    const enemy = new Enemy(this, x, y, col, row, enemyType, efficiency);
     enemy.setTargetPlayer(this.player);
     this.enemies.set(key, enemy);
 
@@ -462,31 +509,39 @@ export class GameScene extends Phaser.Scene {
 
     this.isAttacking = true;
 
-    const pickaxeConfig = PICKAXES_CONFIG[GameState.equippedPickaxe];
-    const damage = pickaxeConfig.efficiency; // Base damage = efficiency
+    const damage = this.currentEfficiency(); // Base damage = effective efficiency
 
-    const blockWorldX = enemy.x;
-    this.player.playSwingAnimation(blockWorldX, () => {
-      const result = enemy.takeDamage(damage, this.player.x, this.player.y);
+    const started = this.player.playSwingAnimation(
+      enemy.x,
+      () => {
+        const result = enemy.takeDamage(damage, this.player.x, this.player.y);
 
-      // Play swing sound
-      if (GameState.soundEnabled) {
-        Sound.play('pickaxe_swing');
-      }
+        // Hit particles
+        this.particles.setPosition(enemy.x, enemy.y);
+        this.particles.setParticleTint(enemy.config.accentColor);
+        this.particles.explode(8);
 
-      // Hit particles
-      this.particles.setPosition(enemy.x, enemy.y);
-      this.particles.setParticleTint(enemy.config.accentColor);
-      this.particles.explode(8);
+        if (result.dead) {
+          this.onEnemyKilled(enemy, col, row, result.gold || 0, result.diamonds || 0);
+        } else {
+          GameState.triggerHaptic(15);
+        }
 
-      if (result.dead) {
-        this.onEnemyKilled(enemy, col, row, result.gold || 0, result.diamonds || 0);
-      } else {
-        GameState.triggerHaptic(15);
-      }
+        this.isAttacking = false;
+      },
+      GameState.swingSpeedMultiplier
+    );
 
+    if (!started) {
+      // A previous swing is still recovering — abort cleanly.
       this.isAttacking = false;
-    });
+      return false;
+    }
+
+    // Play swing sound
+    if (GameState.soundEnabled) {
+      Sound.play('pickaxe_swing');
+    }
 
     return true;
   }
@@ -498,20 +553,93 @@ export class GameScene extends Phaser.Scene {
     // Remove from map
     this.enemies.delete(this.enemyKey(col, row));
 
-    // Rewards
+    // Rewards — physical drops fly to the HUD counters
     if (gold > 0) {
-      GameState.addGold(gold);
+      this.spawnGoldDrops(worldX, worldY, gold);
       this.spawnFloatingText(worldX, worldY - 10, `+${gold}💰`, '#facc15');
-      if (GameState.soundEnabled) Sound.play('gold_collect');
     }
     if (diamonds > 0) {
-      GameState.addDiamonds(diamonds);
+      this.spawnDiamondDrops(worldX, worldY, diamonds);
       this.spawnFloatingText(worldX, worldY - 30, `+${diamonds}💎`, '#38bdf8');
-      if (GameState.soundEnabled) Sound.play('diamond_collect');
     }
 
-    // XP/Level up notification (placeholder for future)
+    // Defeat notification
     this.spawnFloatingText(worldX, worldY - 50, `💀 ${enemy.config.name} Defeated!`, '#ef4444');
+  }
+
+  // ─── Collectible Drops ───────────────────────────────────────────────────
+
+  /** World-space position of a HUD counter, tracked as the camera moves. */
+  private hudTarget(kind: CollectibleKind): { x: number; y: number } {
+    const cam = this.cameras.main;
+    const pos = kind === 'gold' ? HUD_GOLD_POS : HUD_DIAMOND_POS;
+    return { x: cam.worldView.x + pos.x, y: cam.worldView.y + pos.y };
+  }
+
+  private spawnCollectible(
+    x: number,
+    y: number,
+    kind: CollectibleKind,
+    value: number,
+    withSound: boolean
+  ): void {
+    const drop = new Collectible(
+      this,
+      x + Phaser.Math.Between(-8, 8),
+      y - 6,
+      kind,
+      value,
+      () => this.hudTarget(kind),
+      withSound
+    );
+    this.collectibles.push(drop);
+  }
+
+  /** Splits gold into 1-5 visual coins, each carrying a share of the value. */
+  private spawnGoldDrops(x: number, y: number, totalGold: number): void {
+    if (totalGold <= 0) return;
+    const count =
+      totalGold >= 50 ? 5 : totalGold >= 25 ? 4 : totalGold >= 8 ? 3 : totalGold >= 3 ? 2 : 1;
+
+    const base = Math.floor(totalGold / count);
+    let remainder = totalGold - base * count;
+
+    for (let i = 0; i < count; i++) {
+      const value = base + (remainder-- > 0 ? 1 : 0);
+      this.spawnCollectible(x, y, 'gold', value, i === 0);
+    }
+  }
+
+  private spawnDiamondDrops(x: number, y: number, count: number): void {
+    for (let i = 0; i < count; i++) {
+      this.spawnCollectible(x, y, 'diamond', 1, i === 0);
+    }
+  }
+
+  private onCollectibleArrived(drop: Collectible): void {
+    if (drop.kind === 'gold') {
+      GameState.addGold(drop.value);
+    } else {
+      GameState.addDiamonds(drop.value);
+    }
+
+    if (drop.withSound && GameState.soundEnabled) {
+      Sound.play(drop.kind === 'gold' ? 'gold_collect' : 'diamond_collect');
+    }
+  }
+
+  /** Instantly banks all in-flight drops (e.g. when the run ends). */
+  private flushCollectibles(): void {
+    if (this.collectibles.length === 0) return;
+    for (const drop of this.collectibles) {
+      if (drop.kind === 'gold') {
+        GameState.addGold(drop.value);
+      } else {
+        GameState.addDiamonds(drop.value);
+      }
+      drop.destroy();
+    }
+    this.collectibles = [];
   }
 
   private updateEnemies(): void {
@@ -561,7 +689,7 @@ export class GameScene extends Phaser.Scene {
 
   // ─── Update Loop ─────────────────────────────────────────────────────────
 
-  update(): void {
+  update(_time: number, delta: number): void {
     // Cull blocks far above the camera to keep draw calls low
     const camTop = this.cameras.main.worldView.top;
     const cullRow = Math.floor(camTop / BLOCK_SIZE) - 2;
@@ -576,5 +704,16 @@ export class GameScene extends Phaser.Scene {
 
     // Update enemies
     this.updateEnemies();
+
+    // Advance collectible drops (burst -> magnet to HUD -> banked)
+    const dt = delta / 1000;
+    for (let i = this.collectibles.length - 1; i >= 0; i--) {
+      const drop = this.collectibles[i];
+      if (drop.updateCollectible(dt)) {
+        this.collectibles.splice(i, 1);
+        this.onCollectibleArrived(drop);
+        drop.destroy();
+      }
+    }
   }
 }

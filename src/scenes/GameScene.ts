@@ -6,9 +6,10 @@ import { Collectible, CollectibleKind } from '../entities/Collectible';
 import { GameState, PLAYER_MAX_HP } from '../core/GameState';
 import { Ads } from '../core/AdManager';
 import { PICKAXES_CONFIG, PickaxeType } from '../config/pickaxes';
-import { getRandomBlockForDepth } from '../config/blocks';
+import { BLOCKS_CONFIG, getRandomBlockForDepth } from '../config/blocks';
 import { shouldEnemySpawn, getRandomEnemyForDepth, ENEMIES_CONFIG } from '../config/enemies';
 import { Sound } from '../core/SoundManager';
+import { freeze, shake, tickFreeze } from '../core/Juice';
 import { HUD_GOLD_POS, HUD_DIAMOND_POS } from '../ui/HUD';
 
 // ── Grid Constants ──────────────────────────────────────────────────────────
@@ -31,6 +32,8 @@ export class GameScene extends Phaser.Scene {
 
   // State
   private isMining: boolean = false;
+  /** Cell the pointer is holding to keep mining (null when idle). */
+  private holdCell: { col: number; row: number } | null = null;
   private explosiveHitCount: number = 0;
   private EXPLOSIVE_CHARGE_MAX = 5;
 
@@ -70,6 +73,7 @@ export class GameScene extends Phaser.Scene {
     this.collectibles = [];
     this.generatedRows = 0;
     this.isMining = false;
+    this.holdCell = null;
     this.isAttacking = false;
     this.explosiveHitCount = 0;
     this.isCollapsed = false;
@@ -124,6 +128,7 @@ export class GameScene extends Phaser.Scene {
     // Touch / pointer input
     this.input.on('pointerdown', this.onPointerDown, this);
     this.input.on('pointermove', this.onPointerMove, this);
+    this.input.on('pointerup', this.onPointerUp, this);
 
     // Keyboard shortcut (desktop fallback)
     this.input.keyboard?.on('keydown', (event: KeyboardEvent) => {
@@ -262,6 +267,7 @@ export class GameScene extends Phaser.Scene {
     GameState.triggerHaptic(40);
     this.cameras.main.shake(120, 0.004);
     this.cameras.main.flash(160, 190, 30, 30);
+    this.spawnFloatingText(this.player.x, this.player.y - 34, `-${damage}`, '#f87171');
 
     if (GameState.playerHp <= 0) {
       this.collapse();
@@ -526,31 +532,32 @@ export class GameScene extends Phaser.Scene {
   // ─── Input Handling ──────────────────────────────────────────────────────
 
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
-    const worldX = pointer.worldX;
-    const worldY = pointer.worldY;
-    this.tryMineAt(worldX, worldY);
+    this.holdCell = this.tryMineAt(pointer.worldX, pointer.worldY);
   }
 
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
     if (!pointer.isDown) return;
     // Allow dragging to mine adjacent blocks
-    const worldX = pointer.worldX;
-    const worldY = pointer.worldY;
-    this.tryMineAt(worldX, worldY);
+    this.holdCell = this.tryMineAt(pointer.worldX, pointer.worldY);
   }
 
-  private tryMineAt(worldX: number, worldY: number): void {
-    if (this.isMining || this.isAttacking || this.isCollapsed) return;
+  private onPointerUp(): void {
+    this.holdCell = null;
+  }
+
+  /** Returns the cell of the block a swing was just started on, else null. */
+  private tryMineAt(worldX: number, worldY: number): { col: number; row: number } | null {
+    if (this.isMining || this.isAttacking || this.isCollapsed) return null;
 
     // First, try to attack an enemy at this position
     if (this.tryAttackEnemy(worldX, worldY)) {
-      return;
+      return null;
     }
 
     const col = Math.floor(worldX / BLOCK_SIZE);
     const row = Math.floor(worldY / BLOCK_SIZE);
 
-    if (col < 0 || col >= COLS || row < 0) return;
+    if (col < 0 || col >= COLS || row < 0) return null;
 
     // Only allow interacting with nearby cells
     const dx = col - this.player.gridX;
@@ -562,16 +569,16 @@ export class GameScene extends Phaser.Scene {
       (dy === 0 && adx === 1);                   // directly left/right
     const canWalk = adx + Math.abs(dy) === 1;    // any directly adjacent cell
 
-    if (!canMine && !canWalk) return;
+    if (!canMine && !canWalk) return null;
 
     const block = this.blocks.get(this.gridKey(col, row));
 
     if (block && !block.isBroken) {
       // ── Mine the tapped block (only orthogonal neighbours are minable) ──
-      if (!canMine) return;
+      if (!canMine) return null;
       this.isMining = true;
       this.doMineHit(block, col, row);
-      return;
+      return { col, row };
     }
 
     // ── No block here: walk into a directly adjacent empty cell (incl. up) ──
@@ -580,6 +587,7 @@ export class GameScene extends Phaser.Scene {
       const newY = row * BLOCK_SIZE + BLOCK_SIZE / 2 + GRID_STAND_OFFSET;
       this.player.moveToGrid(newX, newY, col, row);
     }
+    return null;
   }
 
   /** True when no live block occupies the cell (dug ground / open air). */
@@ -644,6 +652,10 @@ export class GameScene extends Phaser.Scene {
 
     if (result.broken) {
       this.onBlockBroken(block, col, row, result.gold, result.diamonds);
+
+      // Impact shake scales with how hard the block was to break
+      const hardness = BLOCKS_CONFIG[block.blockType].baseHardness;
+      shake(this, 60 + Math.min(80, hardness * 12), 0.0012 + Math.min(0.0016, hardness * 0.0003));
 
       // AOE effects based on pickaxe type
       if (pickaxeType === 'horizontal_cleaver') {
@@ -735,7 +747,8 @@ export class GameScene extends Phaser.Scene {
         }
       }
     }
-    this.cameras.main.shake(200, 0.006);
+    shake(this, 220, 0.006);
+    freeze(this, 90);
   }
 
   // ─── Block Broken Handler ────────────────────────────────────────────────
@@ -780,6 +793,11 @@ export class GameScene extends Phaser.Scene {
     if (diamonds > 0) {
       this.spawnDiamondDrops(worldX, worldY, diamonds);
       this.spawnFloatingText(worldX, worldY - 20, `+${diamonds}💎`, '#38bdf8');
+    }
+
+    // Rare heart drop while hurt — flying pickup that restores 1 HP
+    if (GameState.playerHp < PLAYER_MAX_HP && Math.random() < 0.03) {
+      this.spawnCollectible(worldX, worldY, 'heart', 1, true);
     }
 
     // Check if player can fall into broken space below
@@ -897,6 +915,14 @@ export class GameScene extends Phaser.Scene {
         this.particles.setParticleTint(enemy.config.accentColor);
         this.particles.explode(8);
 
+        // Damage number
+        this.spawnFloatingText(
+          enemy.x + Phaser.Math.Between(-6, 6),
+          enemy.y - 26,
+          `${damage}`,
+          '#fca5a5'
+        );
+
         if (result.dead) {
           this.onEnemyKilled(enemy, enemy.gridX, enemy.gridY, result.gold || 0, result.diamonds || 0);
         } else {
@@ -944,14 +970,16 @@ export class GameScene extends Phaser.Scene {
       this.spawnFloatingText(worldX, worldY - 30, `+${diamonds}💎`, '#38bdf8');
     }
 
-    // Defeat notification
+    // Defeat notification + impact punch
     this.spawnFloatingText(worldX, worldY - 50, `💀 ${enemy.config.name} Defeated!`, '#ef4444');
+    shake(this, 90, 0.0025);
+    freeze(this, 50);
   }
 
   // ─── Collectible Drops ───────────────────────────────────────────────────
 
   /** World-space position of a HUD counter, tracked as the camera moves. */
-  private hudTarget(kind: CollectibleKind): { x: number; y: number } {
+  private hudTarget(kind: 'gold' | 'diamond'): { x: number; y: number } {
     const cam = this.cameras.main;
     const pos = kind === 'gold' ? HUD_GOLD_POS : HUD_DIAMOND_POS;
     return { x: cam.worldView.x + pos.x, y: cam.worldView.y + pos.y };
@@ -970,7 +998,10 @@ export class GameScene extends Phaser.Scene {
       y - 6,
       kind,
       value,
-      () => this.hudTarget(kind),
+      () =>
+        kind === 'heart'
+          ? { x: this.player.x, y: this.player.y - 10 }
+          : this.hudTarget(kind),
       withSound
     );
     this.collectibles.push(drop);
@@ -1000,12 +1031,36 @@ export class GameScene extends Phaser.Scene {
   private onCollectibleArrived(drop: Collectible): void {
     if (drop.kind === 'gold') {
       GameState.addGold(drop.value);
-    } else {
+    } else if (drop.kind === 'diamond') {
       GameState.addDiamonds(drop.value);
+    } else {
+      // Heart pickup: heals run HP when it reaches the miner
+      GameState.setPlayerHp(GameState.playerHp + drop.value);
     }
 
+    // Floating "+N" at the drop's destination (HUD counter or the miner)
+    const pos =
+      drop.kind === 'heart'
+        ? { x: this.player.x, y: this.player.y - 30 }
+        : this.hudTarget(drop.kind);
+    const label =
+      drop.kind === 'gold'
+        ? `+${drop.value}💰`
+        : drop.kind === 'diamond'
+          ? `+${drop.value}💎`
+          : `+${drop.value}❤️`;
+    const color =
+      drop.kind === 'gold' ? '#fde047' : drop.kind === 'diamond' ? '#7dd3fc' : '#f87171';
+    this.spawnFloatingText(pos.x + Phaser.Math.Between(-10, 10), pos.y - 14, label, color);
+
     if (drop.withSound && GameState.soundEnabled) {
-      Sound.play(drop.kind === 'gold' ? 'gold_collect' : 'diamond_collect');
+      Sound.play(
+        drop.kind === 'gold'
+          ? 'gold_collect'
+          : drop.kind === 'diamond'
+            ? 'diamond_collect'
+            : 'heart_collect'
+      );
     }
   }
 
@@ -1015,9 +1070,10 @@ export class GameScene extends Phaser.Scene {
     for (const drop of this.collectibles) {
       if (drop.kind === 'gold') {
         GameState.addGold(drop.value);
-      } else {
+      } else if (drop.kind === 'diamond') {
         GameState.addDiamonds(drop.value);
       }
+      // Hearts are run-scoped; nothing to bank.
       drop.destroy();
     }
     this.collectibles = [];
@@ -1096,5 +1152,39 @@ export class GameScene extends Phaser.Scene {
         drop.destroy();
       }
     }
+
+    // Hold-to-mine: keep swinging while the pointer rests on a block
+    this.updateHoldMining();
+
+    // Hit-stop drain — uses the raw delta so the slow-mo always ends on time
+    tickFreeze(this, delta);
+  }
+
+  /** Re-swings at the held block as soon as the previous swing finishes. */
+  private updateHoldMining(): void {
+    if (!this.holdCell || this.isMining || this.isAttacking || this.isCollapsed) return;
+    if (!this.input.activePointer.isDown) {
+      this.holdCell = null;
+      return;
+    }
+
+    const { col, row } = this.holdCell;
+    const block = this.blocks.get(this.gridKey(col, row));
+    if (!block || block.isBroken || block.blockType === 'bedrock') {
+      this.holdCell = null;
+      return;
+    }
+
+    const dx = col - this.player.gridX;
+    const dy = row - this.player.gridY;
+    const adx = Math.abs(dx);
+    const canMine = (dx === 0 && (dy === 0 || dy === 1)) || (dy === 0 && adx === 1);
+    if (!canMine) {
+      this.holdCell = null;
+      return;
+    }
+
+    this.isMining = true;
+    this.doMineHit(block, col, row);
   }
 }

@@ -135,7 +135,7 @@ export class BootScene extends Phaser.Scene {
       g.destroy();
     }
 
-    // 3. Generate Collectible Drop Textures (Coin, Diamond)
+    // 3. Generate Collectible Drop Textures (Coin, Diamond, Heart)
     // Coin
     {
       const g = this.make.graphics({ x: 0, y: 0 });
@@ -160,6 +160,19 @@ export class BootScene extends Phaser.Scene {
       g.fillStyle(0xffffff, 0.9);
       g.fillRect(10, 8, 3, 3);
       g.generateTexture('diamond_icon', 24, 24);
+      g.destroy();
+    }
+
+    // Heart Drop (heals the miner when collected)
+    {
+      const g = this.make.graphics({ x: 0, y: 0 });
+      g.fillStyle(0xdc2626, 1);
+      g.fillCircle(8, 8, 6.5);
+      g.fillCircle(16, 8, 6.5);
+      g.fillTriangle(2, 10, 22, 10, 12, 22);
+      g.fillStyle(0xf87171, 1);
+      g.fillCircle(7, 6.5, 2.2);
+      g.generateTexture('heart_icon', 24, 24);
       g.destroy();
     }
 

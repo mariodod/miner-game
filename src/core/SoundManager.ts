@@ -8,6 +8,7 @@ export type SoundEffect =
   | 'block_break'
   | 'gold_collect'
   | 'diamond_collect'
+  | 'heart_collect'
   | 'pickaxe_swing'
   | 'pickaxe_equip'
   | 'shop_buy'
@@ -61,6 +62,14 @@ const SOUND_PRESETS: Record<SoundEffect, SoundConfig> = {
     volume: 0.2,
     attack: 0.01,
     decay: 0.4,
+  },
+  heart_collect: {
+    type: 'triangle',
+    frequency: [392, 587, 784], // G4, D5, G5 — warm heal chime
+    duration: 0.4,
+    volume: 0.18,
+    attack: 0.01,
+    decay: 0.32,
   },
   pickaxe_swing: {
     type: 'triangle',

@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 
-export type CollectibleKind = 'gold' | 'diamond';
+export type CollectibleKind = 'gold' | 'diamond' | 'heart';
 
 export interface CollectibleTarget {
   x: number;
@@ -8,9 +8,10 @@ export interface CollectibleTarget {
 }
 
 /**
- * A physical drop item (coin or gem) that bursts out of a broken block /
- * defeated enemy and then magnet-flies to the HUD counter in screen space.
- * Currency is only credited once the drop reaches the counter.
+ * A physical drop item (coin, gem or heart) that bursts out of a broken
+ * block / defeated enemy and then magnet-flies to its target: the HUD
+ * counter, or the miner for heart pickups. Effects are only applied once
+ * the drop reaches the target.
  */
 export class Collectible extends Phaser.GameObjects.Sprite {
   public readonly kind: CollectibleKind;
@@ -35,7 +36,9 @@ export class Collectible extends Phaser.GameObjects.Sprite {
     getTarget: () => CollectibleTarget,
     withSound: boolean = true
   ) {
-    super(scene, x, y, kind === 'gold' ? 'coin_icon' : 'diamond_icon');
+    const texture =
+      kind === 'gold' ? 'coin_icon' : kind === 'diamond' ? 'diamond_icon' : 'heart_icon';
+    super(scene, x, y, texture);
 
     this.kind = kind;
     this.value = value;

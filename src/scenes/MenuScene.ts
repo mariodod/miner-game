@@ -169,9 +169,13 @@ export class MenuScene extends Phaser.Scene {
     gearBg.on('pointerdown', () => {
       if (GameState.soundEnabled) Sound.play('ui_click');
       if (this.settingsModal) return;
-      this.settingsModal = new SettingsModal(this, () => {
-        this.settingsModal = null;
-      });
+      this.settingsModal = new SettingsModal(
+        this,
+        () => {
+          this.settingsModal = null;
+        },
+        { showReset: true, onReset: () => this.scene.restart() }
+      );
     });
     // Padding keeps the emoji glyph inside the text canvas — color emoji
     // paint slightly above the measured ascent and get their top clipped.

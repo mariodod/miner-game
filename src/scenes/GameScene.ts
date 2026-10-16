@@ -171,38 +171,41 @@ export class GameScene extends Phaser.Scene {
       if (event.code === 'Escape') this.openPauseMenu();
     });
 
-    // "Pause" & "Give Up" buttons — fixed to viewport, below the HUD banner
-    this.add
-      .text(width - 8, 64, '⏸ Pause', {
-        fontSize: '12px',
-        color: '#cbd5e1',
-        backgroundColor: '#0f172a',
-        padding: { x: 6, y: 4 },
-      })
-      .setOrigin(1, 0)
-      .setDepth(1000)
-      .setScrollFactor(0)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => {
-        if (GameState.soundEnabled) Sound.play('ui_click');
-        this.openPauseMenu();
-      });
+    // "Pause" & "Give Up" pill buttons — fixed to the viewport's top right
+    this.createPillButton(width - 8, 64, 84, 28, '⏸ Pause', 0x1e293b, 0x475569, '#cbd5e1', () =>
+      this.openPauseMenu()
+    );
 
-    this.add
-      .text(width - 8, 92, '🏳 Give Up', {
-        fontSize: '12px',
-        color: '#f87171',
-        backgroundColor: '#0f172a',
-        padding: { x: 6, y: 4 },
-      })
-      .setOrigin(1, 0)
-      .setDepth(1000)
-      .setScrollFactor(0)
-      .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => {
-        if (GameState.soundEnabled) Sound.play('ui_click');
+    // Give Up asks for one more deliberate tap — a stray tap never ends the run
+    let giveUpArmed = false;
+    let giveUpTimer: Phaser.Time.TimerEvent | null = null;
+    const giveUp = this.createPillButton(
+      width - 8,
+      98,
+      84,
+      28,
+      '🏳 Give Up',
+      0x7f1d1d,
+      0xef4444,
+      '#fca5a5',
+      () => {
+        if (!giveUpArmed) {
+          giveUpArmed = true;
+          giveUp.text.setText('Tap again').setColor('#ffffff');
+          giveUp.redraw(0xb91c1c, 0xfca5a5);
+          GameState.triggerHaptic(15);
+          if (giveUpTimer) giveUpTimer.remove();
+          giveUpTimer = this.time.delayedCall(2200, () => {
+            giveUpArmed = false;
+            if (giveUp.text.active) giveUp.text.setText('🏳 Give Up').setColor('#fca5a5');
+            giveUp.redraw(0x7f1d1d, 0xef4444);
+          });
+          return;
+        }
+        if (giveUpTimer) giveUpTimer.remove();
         this.endRun();
-      });
+      }
+    );
 
     // When returning from the shop mid-run, refresh block HP for the
     // (possibly upgraded) pickaxe efficiency.
@@ -246,6 +249,57 @@ export class GameScene extends Phaser.Scene {
     this.isPauseOpen = true;
     this.scene.launch('PauseScene');
     this.scene.pause();
+  }
+
+  /**
+   * Rounded pill button pinned to the viewport's right edge (top-right UI).
+   * Returns the label (for state swaps) and a redraw fn (for restyles).
+   */
+  private createPillButton(
+    rightX: number,
+    y: number,
+    w: number,
+    h: number,
+    label: string,
+    fill: number,
+    stroke: number,
+    textColor: string,
+    onClick: () => void
+  ): { text: Phaser.GameObjects.Text; redraw: (fill: number, stroke: number) => void } {
+    const bg = this.add.graphics();
+    const redraw = (f: number, s: number) => {
+      bg.clear();
+      bg.fillStyle(f, 1);
+      bg.fillRoundedRect(rightX - w, y, w, h, h / 2);
+      bg.lineStyle(1.5, s, 0.9);
+      bg.strokeRoundedRect(rightX - w, y, w, h, h / 2);
+    };
+    redraw(fill, stroke);
+    bg.setDepth(1000).setScrollFactor(0);
+    bg.setInteractive({
+      hitArea: new Phaser.Geom.Rectangle(rightX - w, y, w, h),
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    });
+
+    const text = this.add
+      .text(rightX - w / 2, y + h / 2, label, {
+        fontSize: '12px',
+        fontStyle: 'bold',
+        color: textColor,
+      })
+      .setOrigin(0.5)
+      .setDepth(1001)
+      .setScrollFactor(0);
+
+    bg.on('pointerover', () => text.setAlpha(0.85));
+    bg.on('pointerout', () => text.setAlpha(1));
+    bg.on('pointerdown', () => {
+      if (GameState.soundEnabled) Sound.play('ui_click');
+      onClick();
+    });
+
+    return { text, redraw };
   }
 
   // ─── First-Run Tutorial Hints ────────────────────────────────────────────

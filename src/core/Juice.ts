@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { GameState } from './GameState';
 
 /**
  * Tiny game-feel (juice) helpers: hit-stop freezes and camera shakes.
@@ -29,7 +30,8 @@ export function tickFreeze(scene: Phaser.Scene, deltaMs: number): void {
   }
 }
 
-/** Camera shake shorthand. */
+/** Camera shake shorthand (a no-op while the player disables screen shake). */
 export function shake(scene: Phaser.Scene, durationMs: number, intensity: number): void {
+  if (!GameState.screenShakeEnabled) return;
   scene.cameras.main.shake(durationMs, intensity);
 }

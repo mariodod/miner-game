@@ -15,6 +15,7 @@ export interface GameSaveData {
   soundEnabled: boolean;
   musicEnabled: boolean;
   hapticsEnabled: boolean;
+  screenShakeEnabled: boolean;
   tutorialDone: boolean;
 }
 
@@ -99,6 +100,7 @@ export class GameStateManager {
       soundEnabled: true,
       musicEnabled: true,
       hapticsEnabled: true,
+      screenShakeEnabled: true,
       tutorialDone: false,
     };
   }
@@ -163,6 +165,10 @@ export class GameStateManager {
 
   public get highScoreDepth(): number {
     return this.data.highScoreDepth;
+  }
+
+  public get screenShakeEnabled(): boolean {
+    return this.data.screenShakeEnabled;
   }
 
   public get equippedPickaxe(): PickaxeId {
@@ -432,6 +438,30 @@ export class GameStateManager {
     this.save();
     this.emit('hapticsToggled', this.data.hapticsEnabled);
     return this.data.hapticsEnabled;
+  }
+
+  public toggleScreenShake(): boolean {
+    this.data.screenShakeEnabled = !this.data.screenShakeEnabled;
+    this.save();
+    this.emit('screenShakeToggled', this.data.screenShakeEnabled);
+    return this.data.screenShakeEnabled;
+  }
+
+  /** Wipes the save back to a fresh install (settings > Reset Progress). */
+  public resetProgress(): void {
+    this.data = this.getDefaultData();
+    this.save();
+    this.startNewRun();
+    // Refresh every surface that renders saved values.
+    this.emit('goldChanged', this.data.gold);
+    this.emit('diamondsChanged', this.data.diamonds);
+    this.emit('pickaxeChanged', this.data.equippedPickaxe);
+    this.emit('skinChanged', this.data.equippedSkin);
+    this.emit('upgradesChanged', this.upgradeLevels);
+    this.emit('soundToggled', this.data.soundEnabled);
+    this.emit('musicToggled', this.data.musicEnabled);
+    this.emit('hapticsToggled', this.data.hapticsEnabled);
+    this.emit('highScoreChanged', this.data.highScoreDepth);
   }
 
   /** First-run tutorial is considered complete once every hint was shown. */

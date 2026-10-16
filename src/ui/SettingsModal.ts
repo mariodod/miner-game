@@ -3,8 +3,9 @@ import { GameState } from '../core/GameState';
 import { Sound } from '../core/SoundManager';
 
 /**
- * Settings modal — sound / music / vibration toggles plus a tutorial replay
- * button. Used from the main menu and the pause overlay.
+ * Settings modal — sound / music / vibration / screen-shake toggles, a
+ * tutorial replay button, and (menu-only) a guarded Reset Progress row.
+ * Used from the main menu and the pause overlay.
  *
  * Every piece is a top-level, scroll-factor-0 object. Phaser hit-tests
  * children of a Container in registration order instead of visual order and
@@ -14,12 +15,18 @@ import { Sound } from '../core/SoundManager';
 export class SettingsModal {
   private scene: Phaser.Scene;
   private onClose?: () => void;
+  private onReset?: () => void;
   private objects: Array<Phaser.GameObjects.Graphics | Phaser.GameObjects.Text> = [];
   private destroyed = false;
 
-  constructor(scene: Phaser.Scene, onClose?: () => void) {
+  constructor(
+    scene: Phaser.Scene,
+    onClose?: () => void,
+    options?: { showReset?: boolean; onReset?: () => void }
+  ) {
     this.scene = scene;
     this.onClose = onClose;
+    this.onReset = options?.onReset;
 
     const { width, height } = scene.scale;
 
@@ -43,10 +50,12 @@ export class SettingsModal {
       Phaser.Geom.Rectangle.Contains
     );
 
-    // Centered panel
+    // Centered panel — taller when the menu-only reset row is included.
     const panelW = Math.min(width - 40, 320);
     const panelX = (width - panelW) / 2;
-    const panelH = 316;
+    const rowHeight = 52;
+    const rowCount = options?.showReset ? 6 : 5;
+    const panelH = 66 + rowCount * rowHeight + 42;
     const panelY = (height - panelH) / 2;
 
     const panel = add(scene.add.graphics(), 2000);
@@ -92,12 +101,12 @@ export class SettingsModal {
 
     // ── Toggle rows ──
     const rowsTop = panelY + 66;
-    const rowHeight = 52;
+    const rowY = (index: number) => rowsTop + rowHeight * index + rowHeight / 2;
 
     this.addToggleRow(
       panelX,
       panelW,
-      rowsTop + rowHeight * 0 + rowHeight / 2,
+      rowY(0),
       '🔊 Sound Effects',
       () => GameState.soundEnabled,
       () => GameState.toggleSound()
@@ -106,7 +115,7 @@ export class SettingsModal {
     this.addToggleRow(
       panelX,
       panelW,
-      rowsTop + rowHeight * 1 + rowHeight / 2,
+      rowY(1),
       '🎵 Music',
       () => GameState.musicEnabled,
       () => {
@@ -119,7 +128,7 @@ export class SettingsModal {
     this.addToggleRow(
       panelX,
       panelW,
-      rowsTop + rowHeight * 2 + rowHeight / 2,
+      rowY(2),
       '📳 Vibration',
       () => GameState.hapticsEnabled,
       () => {
@@ -129,7 +138,20 @@ export class SettingsModal {
       }
     );
 
-    this.addTutorialRow(panelX, panelW, rowsTop + rowHeight * 3 + rowHeight / 2);
+    this.addToggleRow(
+      panelX,
+      panelW,
+      rowY(3),
+      '🎬 Screen Shake',
+      () => GameState.screenShakeEnabled,
+      () => GameState.toggleScreenShake()
+    );
+
+    this.addTutorialRow(panelX, panelW, rowY(4));
+
+    if (options?.showReset) {
+      this.addResetRow(panelX, panelW, rowY(5));
+    }
 
     // Fade in
     scene.tweens.add({ targets: this.objects, alpha: 1, duration: 180, ease: 'Power2' });
@@ -252,6 +274,80 @@ export class SettingsModal {
     });
   }
 
+  /**
+   * Destructive row — the first tap only arms the button ("SURE?"), a second
+   * deliberate tap within the window wipes the save. A stray tap can never
+   * erase progress.
+   */
+  private addResetRow(panelX: number, panelW: number, y: number): void {
+    const scene = this.scene;
+
+    this.objects.push(
+      scene.add
+        .text(panelX + 22, y, '🗑 Reset Progress', { fontSize: '14px', color: '#e2e8f0' })
+        .setOrigin(0, 0.5)
+        .setScrollFactor(0)
+        .setAlpha(0)
+        .setDepth(2000)
+    );
+
+    const btnW = 88;
+    const btnH = 32;
+    const btnX = panelX + panelW - 22 - btnW;
+    const btnY = y - btnH / 2;
+
+    const btn = scene.add.graphics();
+    btn.setScrollFactor(0);
+    btn.setAlpha(0);
+    btn.setDepth(2001);
+    btn.setInteractive({
+      hitArea: new Phaser.Geom.Rectangle(btnX, btnY, btnW, btnH),
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    });
+    this.drawResetButton(btn, btnX, btnY, btnW, btnH, false);
+    this.objects.push(btn);
+
+    const btnText = scene.add
+      .text(btnX + btnW / 2, y, 'RESET', {
+        fontSize: '12px',
+        fontStyle: 'bold',
+        color: '#fecaca',
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setAlpha(0)
+      .setDepth(2001);
+    this.objects.push(btnText);
+
+    let armed = false;
+    let armTimer: Phaser.Time.TimerEvent | null = null;
+
+    btn.on('pointerdown', () => {
+      if (this.destroyed) return;
+      if (GameState.soundEnabled) Sound.play('ui_click');
+
+      if (!armed) {
+        armed = true;
+        btnText.setText('SURE?').setColor('#ffffff');
+        this.drawResetButton(btn, btnX, btnY, btnW, btnH, true);
+        if (armTimer) armTimer.remove();
+        armTimer = scene.time.delayedCall(2200, () => {
+          armed = false;
+          if (btnText.active) btnText.setText('RESET').setColor('#fecaca');
+          if (btn.active) this.drawResetButton(btn, btnX, btnY, btnW, btnH, false);
+        });
+        return;
+      }
+
+      if (armTimer) armTimer.remove();
+      GameState.resetProgress();
+      this.destroy();
+      if (this.onClose) this.onClose();
+      if (this.onReset) this.onReset();
+    });
+  }
+
   // ── Drawing helpers ───────────────────────────────────────────────────────
 
   private drawPill(
@@ -280,6 +376,21 @@ export class SettingsModal {
     btn.fillStyle(0x78350f, 1);
     btn.fillRoundedRect(x, y, w, h, 10);
     btn.lineStyle(1.5, 0xfbbf24, 0.8);
+    btn.strokeRoundedRect(x, y, w, h, 10);
+  }
+
+  private drawResetButton(
+    btn: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    armed: boolean
+  ): void {
+    btn.clear();
+    btn.fillStyle(armed ? 0xb91c1c : 0x7f1d1d, 1);
+    btn.fillRoundedRect(x, y, w, h, 10);
+    btn.lineStyle(1.5, armed ? 0xfca5a5 : 0xef4444, 0.8);
     btn.strokeRoundedRect(x, y, w, h, 10);
   }
 

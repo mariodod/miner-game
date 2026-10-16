@@ -21,6 +21,34 @@ interface ScrollItem {
   disable: () => void;
 }
 
+interface ShopPill {
+  container: Phaser.GameObjects.Container;
+  enable: () => void;
+  disable: () => void;
+  nudge: () => void;
+}
+
+interface PillStyle {
+  fill: number;
+  border: number;
+  textColor: string;
+}
+
+/** Shared pill palette (matches the HUD/settings pill language). */
+const PILL: Record<
+  'neutral' | 'blue' | 'green' | 'amber' | 'cyan' | 'dim' | 'badgeBlue' | 'badgeGreen',
+  PillStyle
+> = {
+  neutral: { fill: 0x1e293b, border: 0x64748b, textColor: '#cbd5e1' },
+  blue: { fill: 0x1e40af, border: 0x3b82f6, textColor: '#dbeafe' },
+  green: { fill: 0x166534, border: 0x4ade80, textColor: '#bbf7d0' },
+  amber: { fill: 0x78350f, border: 0xfbbf24, textColor: '#fde68a' },
+  cyan: { fill: 0x0c4a6e, border: 0x38bdf8, textColor: '#bae6fd' },
+  dim: { fill: 0x0f172a, border: 0x334155, textColor: '#64748b' },
+  badgeBlue: { fill: 0x1e3a8a, border: 0x3b82f6, textColor: '#93c5fd' },
+  badgeGreen: { fill: 0x14532d, border: 0x4ade80, textColor: '#86efac' },
+};
+
 export class ShopScene extends Phaser.Scene {
   private activeTab: ShopTab = 'pickaxes';
   private returnTo: 'menu' | 'game' = 'menu';
@@ -40,6 +68,8 @@ export class ShopScene extends Phaser.Scene {
   private isDragging = false;
   private dragStartY = 0;
   private contentStartY = 0;
+  /** Blocks re-entrant buy/back actions while a delayed restart is pending. */
+  private actionLock = false;
 
   constructor() {
     super('ShopScene');
@@ -52,7 +82,7 @@ export class ShopScene extends Phaser.Scene {
   create() {
     const { width, height } = this.scale;
     this.scrollItems = [];
-    this.chestReward = null;
+    this.actionLock = false;
 
     // Dark background
     const bg = this.add.graphics();
@@ -76,31 +106,42 @@ export class ShopScene extends Phaser.Scene {
 
     // Back Button (resumes the run when the shop was opened mid-game)
     const backLabel = this.returnTo === 'game' ? '← Mine' : '← Menu';
-    const backBtn = this.add
-      .text(16, 28, backLabel, {
-        fontSize: '14px',
-        color: '#60a5fa',
-      })
-      .setOrigin(0, 0.5)
-      .setInteractive({ useHandCursor: true });
-    backBtn.on('pointerdown', () => {
-      if (GameState.soundEnabled) Sound.play('ui_click');
-      if (this.returnTo === 'game') {
-        this.scene.resume('GameScene');
-        this.scene.launch('HUDScene');
-        this.scene.stop();
-      } else {
-        this.scene.start('MenuScene');
-      }
+    this.createPillButton({
+      x: 16,
+      y: 28,
+      anchor: 'left',
+      label: backLabel,
+      ...PILL.neutral,
+      onClick: () => {
+        if (this.actionLock) return;
+        this.actionLock = true;
+        if (GameState.soundEnabled) Sound.play('ui_click');
+        if (this.returnTo === 'game') {
+          this.scene.resume('GameScene');
+          this.scene.launch('HUDScene');
+          this.scene.stop();
+        } else {
+          this.scene.start('MenuScene');
+        }
+      },
     });
 
-    // Currency display top-right
-    this.add
-      .text(width - 12, 28, `💰 ${GameState.gold}  💎 ${GameState.diamonds}`, {
+    // Currency display top-right (pill)
+    const currency = this.add
+      .text(width - 24, 28, `💰 ${GameState.gold}  💎 ${GameState.diamonds}`, {
         fontSize: '12px',
+        fontStyle: 'bold',
         color: '#e2e8f0',
       })
-      .setOrigin(1, 0.5);
+      .setOrigin(1, 0.5)
+      .setDepth(6);
+    const currencyBg = this.add.graphics().setDepth(5);
+    const cw = currency.width + 24;
+    const ch = 24;
+    currencyBg.fillStyle(0x1e293b, 1);
+    currencyBg.fillRoundedRect(width - 12 - cw, 28 - ch / 2, cw, ch, ch / 2);
+    currencyBg.lineStyle(1, 0x334155, 1);
+    currencyBg.strokeRoundedRect(width - 12 - cw, 28 - ch / 2, cw, ch, ch / 2);
 
     // ── Tabs ──
     const tabY = 72;
@@ -110,7 +151,22 @@ export class ShopScene extends Phaser.Scene {
       { tab: 'skins', label: '👷 Skins' },
     ];
     tabCenters.forEach((entry, i) => {
-      this.drawTab(entry.tab, entry.label, width * ((i + 0.5) / 3), tabY);
+      const isActive = this.activeTab === entry.tab;
+      this.createPillButton({
+        x: width * ((i + 0.5) / 3),
+        y: tabY,
+        label: entry.label,
+        minWidth: 104,
+        interactive: !isActive,
+        ...(isActive ? PILL.blue : PILL.neutral),
+        onClick: () => {
+          if (this.actionLock) return;
+          if (GameState.soundEnabled) Sound.play('ui_click');
+          this.activeTab = entry.tab;
+          this.persistedScrollOffset = 0;
+          this.scene.restart({ returnTo: this.returnTo });
+        },
+      });
     });
 
     // ── Scrollable content ──
@@ -140,41 +196,6 @@ export class ShopScene extends Phaser.Scene {
   }
 
   // ─── Tabs ────────────────────────────────────────────────────────────────
-
-  private drawTab(tab: ShopTab, label: string, x: number, y: number): void {
-    const isActive = this.activeTab === tab;
-    const w = 104;
-    const h = 30;
-
-    const bg = this.add.graphics();
-    bg.fillStyle(isActive ? 0x1e40af : 0x1e293b, 1);
-    bg.fillRoundedRect(x - w / 2, y - h / 2, w, h, 8);
-
-    const text = this.add
-      .text(x, y, label, {
-        fontSize: '11px',
-        fontStyle: isActive ? 'bold' : 'normal',
-        color: isActive ? '#f0f9ff' : '#94a3b8',
-      })
-      .setOrigin(0.5);
-
-    if (!isActive) {
-      const switchTab = () => {
-        if (GameState.soundEnabled) Sound.play('ui_click');
-        this.activeTab = tab;
-        this.persistedScrollOffset = 0;
-        this.scene.restart({ returnTo: this.returnTo });
-      };
-      bg.setInteractive({
-        hitArea: new Phaser.Geom.Rectangle(x - w / 2, y - h / 2, w, h),
-        hitAreaCallback: Phaser.Geom.Rectangle.Contains,
-        useHandCursor: true,
-      });
-      bg.on('pointerdown', switchTab);
-      text.setInteractive({ useHandCursor: true });
-      text.on('pointerdown', switchTab);
-    }
-  }
 
   private renderTab(tab: ShopTab, width: number): void {
     this.lastContentBottom = 8;
@@ -290,13 +311,124 @@ export class ShopScene extends Phaser.Scene {
     this.scene.restart({ returnTo: this.returnTo });
   }
 
-  private registerScrollItem(centerY: number, button: Phaser.GameObjects.Text): void {
-    this.scrollItems.push({
-      centerY,
-      enabled: true,
-      enable: () => button.setInteractive({ useHandCursor: true }),
-      disable: () => button.disableInteractive(),
-    });
+  private registerScrollItem(centerY: number, enable: () => void, disable: () => void): void {
+    this.scrollItems.push({ centerY, enabled: true, enable, disable });
+  }
+
+  // ─── Pill Buttons ────────────────────────────────────────────────────────
+
+  /**
+   * Rounded pill button in the HUD/settings visual language. Fires on
+   * pointerdown, dips while pressed, and supports a "denied" side-shake.
+   */
+  private createPillButton(config: {
+    x: number;
+    y: number;
+    anchor?: 'center' | 'left' | 'right';
+    label: string;
+    fill: number;
+    border: number;
+    textColor: string;
+    minWidth?: number;
+    interactive?: boolean;
+    onClick?: () => void;
+  }): ShopPill {
+    const h = 30;
+    const padX = 14;
+
+    const text = this.add
+      .text(0, 0, config.label, {
+        fontSize: '12px',
+        fontStyle: 'bold',
+        color: config.textColor,
+      })
+      .setOrigin(0.5);
+    const w = Math.max(config.minWidth ?? 0, text.width + padX * 2);
+
+    const gfx = this.add.graphics();
+    gfx.fillStyle(config.fill, 1);
+    gfx.fillRoundedRect(-w / 2, -h / 2, w, h, h / 2);
+    gfx.lineStyle(1.5, config.border, 0.9);
+    gfx.strokeRoundedRect(-w / 2, -h / 2, w, h, h / 2);
+
+    const anchor = config.anchor ?? 'center';
+    const cx =
+      anchor === 'center' ? config.x : anchor === 'right' ? config.x - w / 2 : config.x + w / 2;
+
+    const container = this.add.container(cx, config.y, [gfx, text]);
+    const hitArea = new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h);
+
+    const enable = () => {
+      container.setInteractive({
+        hitArea,
+        hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+        useHandCursor: true,
+      });
+    };
+
+    if (config.interactive !== false) {
+      enable();
+
+      container.on('pointerover', () => text.setAlpha(0.85));
+      container.on('pointerout', () => {
+        text.setAlpha(1);
+        container.setScale(1);
+      });
+      container.on('pointerdown', () => {
+        container.setScale(0.94);
+        GameState.haptic('tap');
+        config.onClick?.();
+      });
+      container.on('pointerup', () => container.setScale(1));
+    }
+
+    const nudge = () => {
+      this.tweens.add({
+        targets: container,
+        x: { from: cx - 3, to: cx + 3 },
+        duration: 40,
+        yoyo: true,
+        repeat: 1,
+        onComplete: () => container.setX(cx),
+      });
+    };
+
+    return {
+      container,
+      enable,
+      disable: () => container.disableInteractive(),
+      nudge,
+    };
+  }
+
+  /**
+   * Purchase celebration: soft screen flash + a floating spend/reward line
+   * under the currency pill, then a short delayed restart so the fresh state
+   * lands with feedback instead of an instant re-render.
+   */
+  private celebratePurchase(flashColor: number, floatText: string, floatColor: string): void {
+    if (this.actionLock) return;
+    this.actionLock = true;
+
+    const { width, height } = this.scale;
+
+    const flash = this.add
+      .rectangle(0, 0, width, height, flashColor, 0.18)
+      .setOrigin(0, 0)
+      .setDepth(700);
+    this.tweens.add({ targets: flash, alpha: 0, duration: 320, ease: 'Cubic.easeOut' });
+
+    const floaty = this.add
+      .text(width - 60, 48, floatText, {
+        fontSize: '14px',
+        fontStyle: 'bold',
+        color: floatColor,
+      })
+      .setOrigin(0.5)
+      .setDepth(701);
+    this.tweens.add({ targets: floaty, y: 30, alpha: 0, duration: 420, ease: 'Cubic.easeOut' });
+
+    this.time.delayedCall(250, () => this.restartShop());
   }
 
   // ─── Pickaxe Forge ──────────────────────────────────────────────────────
@@ -353,62 +485,66 @@ export class ShopScene extends Phaser.Scene {
       const desc = this.add.text(72, y + 50, config.description, {
         fontSize: '10px',
         color: '#94a3b8',
-        wordWrap: { width: width - 190 },
+        wordWrap: { width: width - 210 },
       });
       this.content.add(desc);
 
       // Price / Status button
       if (isEquipped) {
-        const equipped = this.add
-          .text(width - 24, y + cardH / 2, '✓ EQUIPPED', {
-            fontSize: '11px',
-            fontStyle: 'bold',
-            color: '#34d399',
-          })
-          .setOrigin(1, 0.5);
-        this.content.add(equipped);
-      } else if (isUnlocked) {
-        const equipBtn = this.add
-          .text(width - 24, y + cardH / 2, 'EQUIP', {
-            fontSize: '13px',
-            fontStyle: 'bold',
-            color: '#60a5fa',
-            backgroundColor: '#1e40af',
-            padding: { x: 8, y: 4 },
-          })
-          .setOrigin(1, 0.5)
-          .setInteractive({ useHandCursor: true });
-        equipBtn.on('pointerdown', () => {
-          if (GameState.soundEnabled) Sound.play('pickaxe_equip');
-          GameState.equipPickaxe(pickaxeId);
-          this.restartShop();
+        const badge = this.createPillButton({
+          x: width - 24,
+          y: y + cardH / 2,
+          anchor: 'right',
+          label: '✓ EQUIPPED',
+          interactive: false,
+          ...PILL.badgeGreen,
         });
-        this.content.add(equipBtn);
-        this.registerScrollItem(y + cardH / 2, equipBtn);
+        this.content.add(badge.container);
+      } else if (isUnlocked) {
+        const equipBtn = this.createPillButton({
+          x: width - 24,
+          y: y + cardH / 2,
+          anchor: 'right',
+          label: 'EQUIP',
+          ...PILL.blue,
+          onClick: () => {
+            if (this.actionLock) return;
+            if (GameState.soundEnabled) Sound.play('pickaxe_equip');
+            GameState.equipPickaxe(pickaxeId);
+            this.restartShop();
+          },
+        });
+        this.content.add(equipBtn.container);
+        this.registerScrollItem(y + cardH / 2, equipBtn.enable, equipBtn.disable);
       } else {
         const priceStr =
           (config.priceGold > 0 ? `💰${config.priceGold}  ` : '') +
           (config.priceDiamonds > 0 ? `💎${config.priceDiamonds}` : '');
-        const buyBtn = this.add
-          .text(width - 24, y + cardH / 2, priceStr || 'FREE', {
-            fontSize: '12px',
-            fontStyle: 'bold',
-            color: canAfford ? '#fbbf24' : '#6b7280',
-            backgroundColor: canAfford ? '#292524' : '#1c1917',
-            padding: { x: 8, y: 4 },
-          })
-          .setOrigin(1, 0.5)
-          .setInteractive({ useHandCursor: true });
-        buyBtn.on('pointerdown', () => {
-          if (!canAfford) {
-            if (GameState.soundEnabled) Sound.play('shop_cannot_afford');
-            return;
-          }
-          if (GameState.soundEnabled) Sound.play('shop_buy');
-          if (GameState.unlockPickaxe(pickaxeId)) this.restartShop();
+        const buyBtn = this.createPillButton({
+          x: width - 24,
+          y: y + cardH / 2,
+          anchor: 'right',
+          label: priceStr || 'FREE',
+          ...(canAfford ? PILL.amber : PILL.dim),
+          onClick: () => {
+            if (this.actionLock) return;
+            if (!canAfford) {
+              if (GameState.soundEnabled) Sound.play('shop_cannot_afford');
+              buyBtn.nudge();
+              return;
+            }
+            if (GameState.soundEnabled) Sound.play('shop_buy');
+            if (GameState.unlockPickaxe(pickaxeId)) {
+              GameState.haptic('success');
+              const spend =
+                (config.priceGold > 0 ? `-💰 ${config.priceGold}` : '') +
+                (config.priceDiamonds > 0 ? `  -💎 ${config.priceDiamonds}` : '');
+              this.celebratePurchase(0xfbbf24, spend.trim(), '#fde68a');
+            }
+          },
         });
-        this.content.add(buyBtn);
-        this.registerScrollItem(y + cardH / 2, buyBtn);
+        this.content.add(buyBtn.container);
+        this.registerScrollItem(y + cardH / 2, buyBtn.enable, buyBtn.disable);
       }
 
       y += cardH + gapY;
@@ -488,7 +624,7 @@ export class ShopScene extends Phaser.Scene {
       const desc = this.add.text(58, y + 52, config.description, {
         fontSize: '10px',
         color: '#94a3b8',
-        wordWrap: { width: width - 170 },
+        wordWrap: { width: width - 210 },
       });
       this.content.add(desc);
 
@@ -515,37 +651,38 @@ export class ShopScene extends Phaser.Scene {
       this.content.add(levelText);
 
       if (isMax) {
-        const max = this.add
-          .text(width - 24, y + 76, '✓ MAXED', {
-            fontSize: '12px',
-            fontStyle: 'bold',
-            color: '#4ade80',
-          })
-          .setOrigin(1, 0.5);
-        this.content.add(max);
-      } else {
-        const buyBtn = this.add
-          .text(width - 24, y + 76, `💰 ${cost}`, {
-            fontSize: '12px',
-            fontStyle: 'bold',
-            color: canAfford ? '#fbbf24' : '#6b7280',
-            backgroundColor: canAfford ? '#292524' : '#1c1917',
-            padding: { x: 8, y: 4 },
-          })
-          .setOrigin(1, 0.5)
-          .setInteractive({ useHandCursor: true });
-        buyBtn.on('pointerdown', () => {
-          if (!canAfford) {
-            if (GameState.soundEnabled) Sound.play('shop_cannot_afford');
-            return;
-          }
-          if (GameState.purchaseUpgrade(config.id)) {
-            if (GameState.soundEnabled) Sound.play('upgrade_buy');
-            this.restartShop();
-          }
+        const badge = this.createPillButton({
+          x: width - 24,
+          y: y + 76,
+          anchor: 'right',
+          label: '✓ MAXED',
+          interactive: false,
+          ...PILL.badgeGreen,
         });
-        this.content.add(buyBtn);
-        this.registerScrollItem(y + 76, buyBtn);
+        this.content.add(badge.container);
+      } else {
+        const buyBtn = this.createPillButton({
+          x: width - 24,
+          y: y + 76,
+          anchor: 'right',
+          label: `💰 ${cost}`,
+          ...(canAfford ? PILL.amber : PILL.dim),
+          onClick: () => {
+            if (this.actionLock) return;
+            if (!canAfford) {
+              if (GameState.soundEnabled) Sound.play('shop_cannot_afford');
+              buyBtn.nudge();
+              return;
+            }
+            if (GameState.purchaseUpgrade(config.id)) {
+              if (GameState.soundEnabled) Sound.play('upgrade_buy');
+              GameState.haptic('success');
+              this.celebratePurchase(0xfbbf24, `-💰 ${cost}`, '#fde68a');
+            }
+          },
+        });
+        this.content.add(buyBtn.container);
+        this.registerScrollItem(y + 76, buyBtn.enable, buyBtn.disable);
       }
 
       y += cardH + gapY;
@@ -592,34 +729,32 @@ export class ShopScene extends Phaser.Scene {
         this.chestReward !== null
           ? `✅ +${this.chestReward} 💎 · OPEN AGAIN`
           : '📺 WATCH AD · +2-5 💎';
-      const chestBtn = this.add
-        .text(width / 2, y + 74, chestBtnLabel, {
-          fontSize: '12px',
-          fontStyle: 'bold',
-          color: '#1c1917',
-          backgroundColor: '#f59e0b',
-          padding: { x: 14, y: 6 },
-        })
-        .setOrigin(0.5)
-        .setInteractive({ useHandCursor: true });
-      chestBtn.on('pointerdown', () => {
-        if (GameState.soundEnabled) Sound.play('ui_click');
-        const reward = Phaser.Math.Between(2, 5);
-        Ads.showRewardedAd(
-          this,
-          'free_chest',
-          'A mystery diamond chest is waiting!',
-          `+${reward} 💎`,
-          () => {
-            this.chestReward = reward;
-            GameState.addDiamonds(reward);
-            if (GameState.soundEnabled) Sound.play('diamond_collect');
-            this.restartShop();
-          }
-        );
+      const chestBtn = this.createPillButton({
+        x: width / 2,
+        y: y + 74,
+        label: chestBtnLabel,
+        ...PILL.amber,
+        onClick: () => {
+          if (this.actionLock) return;
+          if (GameState.soundEnabled) Sound.play('ui_click');
+          const reward = Phaser.Math.Between(2, 5);
+          Ads.showRewardedAd(
+            this,
+            'free_chest',
+            'A mystery diamond chest is waiting!',
+            `+${reward} 💎`,
+            () => {
+              this.chestReward = reward;
+              GameState.addDiamonds(reward);
+              if (GameState.soundEnabled) Sound.play('diamond_collect');
+              GameState.haptic('success');
+              this.celebratePurchase(0x38bdf8, `+${reward} 💎`, '#7dd3fc');
+            }
+          );
+        },
       });
-      this.content.add(chestBtn);
-      this.registerScrollItem(y + 74, chestBtn);
+      this.content.add(chestBtn.container);
+      this.registerScrollItem(y + 74, chestBtn.enable, chestBtn.disable);
 
       y += chestH + gapY;
     }
@@ -659,60 +794,61 @@ export class ShopScene extends Phaser.Scene {
       const desc = this.add.text(64, y + 36, skin.description, {
         fontSize: '10px',
         color: '#94a3b8',
-        wordWrap: { width: width - 190 },
+        wordWrap: { width: width - 210 },
       });
       this.content.add(desc);
 
       // Status / action
       if (isEquipped) {
-        const wearing = this.add
-          .text(width - 24, y + cardH / 2, '✓ WEARING', {
-            fontSize: '11px',
-            fontStyle: 'bold',
-            color: '#4ade80',
-          })
-          .setOrigin(1, 0.5);
-        this.content.add(wearing);
-      } else if (isUnlocked) {
-        const wearBtn = this.add
-          .text(width - 24, y + cardH / 2, 'WEAR', {
-            fontSize: '13px',
-            fontStyle: 'bold',
-            color: '#4ade80',
-            backgroundColor: '#14532d',
-            padding: { x: 8, y: 4 },
-          })
-          .setOrigin(1, 0.5)
-          .setInteractive({ useHandCursor: true });
-        wearBtn.on('pointerdown', () => {
-          if (GameState.soundEnabled) Sound.play('pickaxe_equip');
-          GameState.equipSkin(skin.id);
-          this.restartShop();
+        const badge = this.createPillButton({
+          x: width - 24,
+          y: y + cardH / 2,
+          anchor: 'right',
+          label: '✓ WEARING',
+          interactive: false,
+          ...PILL.badgeGreen,
         });
-        this.content.add(wearBtn);
-        this.registerScrollItem(y + cardH / 2, wearBtn);
+        this.content.add(badge.container);
+      } else if (isUnlocked) {
+        const wearBtn = this.createPillButton({
+          x: width - 24,
+          y: y + cardH / 2,
+          anchor: 'right',
+          label: 'WEAR',
+          ...PILL.green,
+          onClick: () => {
+            if (this.actionLock) return;
+            if (GameState.soundEnabled) Sound.play('pickaxe_equip');
+            GameState.equipSkin(skin.id);
+            this.restartShop();
+          },
+        });
+        this.content.add(wearBtn.container);
+        this.registerScrollItem(y + cardH / 2, wearBtn.enable, wearBtn.disable);
       } else {
         const priceStr = skin.priceDiamonds > 0 ? `💎 ${skin.priceDiamonds}` : 'FREE';
-        const buyBtn = this.add
-          .text(width - 24, y + cardH / 2, priceStr, {
-            fontSize: '13px',
-            fontStyle: 'bold',
-            color: canAfford ? '#38bdf8' : '#6b7280',
-            backgroundColor: canAfford ? '#0c1428' : '#1c1917',
-            padding: { x: 8, y: 4 },
-          })
-          .setOrigin(1, 0.5)
-          .setInteractive({ useHandCursor: true });
-        buyBtn.on('pointerdown', () => {
-          if (!canAfford) {
-            if (GameState.soundEnabled) Sound.play('shop_cannot_afford');
-            return;
-          }
-          if (GameState.soundEnabled) Sound.play('shop_buy');
-          if (GameState.unlockSkin(skin.id)) this.restartShop();
+        const buyBtn = this.createPillButton({
+          x: width - 24,
+          y: y + cardH / 2,
+          anchor: 'right',
+          label: priceStr,
+          ...(canAfford ? PILL.cyan : PILL.dim),
+          onClick: () => {
+            if (this.actionLock) return;
+            if (!canAfford) {
+              if (GameState.soundEnabled) Sound.play('shop_cannot_afford');
+              buyBtn.nudge();
+              return;
+            }
+            if (GameState.soundEnabled) Sound.play('shop_buy');
+            if (GameState.unlockSkin(skin.id)) {
+              GameState.haptic('success');
+              this.celebratePurchase(0x38bdf8, `-💎 ${skin.priceDiamonds}`, '#7dd3fc');
+            }
+          },
         });
-        this.content.add(buyBtn);
-        this.registerScrollItem(y + cardH / 2, buyBtn);
+        this.content.add(buyBtn.container);
+        this.registerScrollItem(y + cardH / 2, buyBtn.enable, buyBtn.disable);
       }
 
       y += cardH + gapY;

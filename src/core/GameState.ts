@@ -1,3 +1,4 @@
+import { Capacitor } from '@capacitor/core';
 import { PickaxeId, PICKAXES_CONFIG } from '../config/pickaxes';
 import { SKINS_CONFIG, UPGRADES_CONFIG, UpgradeId, getUpgradeCost } from '../config/economy';
 
@@ -16,10 +17,14 @@ export interface GameSaveData {
 
 const STORAGE_KEY = 'pocket_miner_save_v1';
 
+/** Player health for a single run (death opens the revive ad offer). */
+export const PLAYER_MAX_HP = 10;
+
 export class GameStateManager {
   private static instance: GameStateManager;
 
   private data: GameSaveData;
+  private hapticsModule: typeof import('@capacitor/haptics') | null = null;
 
   // Run-specific transient stats
   public currentDepth: number = 0;
@@ -27,6 +32,7 @@ export class GameStateManager {
   public runDiamondsCollected: number = 0;
   public runBlocksBroken: number = 0;
   public explosiveCharge: number = 0; // For explosive pickaxe counter
+  public playerHp: number = PLAYER_MAX_HP; // Transient run health
 
   private listeners: Map<string, Set<(val: any) => void>> = new Map();
 
@@ -226,6 +232,12 @@ export class GameStateManager {
     this.runBlocksBroken++;
   }
 
+  /** Updates the transient run HP and notifies the HUD. */
+  public setPlayerHp(value: number): void {
+    this.playerHp = Math.max(0, Math.min(PLAYER_MAX_HP, Math.round(value)));
+    this.emit('playerHpChanged', this.playerHp);
+  }
+
   public equipPickaxe(id: PickaxeId): boolean {
     if (this.data.unlockedPickaxes.includes(id)) {
       this.data.equippedPickaxe = id;
@@ -316,6 +328,14 @@ export class GameStateManager {
 
   public triggerHaptic(durationMs: number = 25): void {
     if (!this.data.hapticsEnabled) return;
+
+    // Native app: use the Capacitor haptics engine (the vibrate API is
+    // unreliable inside the Android WebView).
+    if (Capacitor.isNativePlatform()) {
+      void this.vibrateNative(durationMs);
+      return;
+    }
+
     if (typeof window !== 'undefined' && 'navigator' in window && 'vibrate' in navigator) {
       try {
         navigator.vibrate(durationMs);
@@ -325,13 +345,29 @@ export class GameStateManager {
     }
   }
 
+  private async vibrateNative(durationMs: number): Promise<void> {
+    try {
+      if (!this.hapticsModule) {
+        this.hapticsModule = await import('@capacitor/haptics');
+      }
+      const { Haptics, ImpactStyle } = this.hapticsModule;
+      await Haptics.impact({
+        style: durationMs >= 30 ? ImpactStyle.Medium : ImpactStyle.Light,
+      });
+    } catch {
+      // Haptics are best-effort only.
+    }
+  }
+
   public startNewRun(): void {
     this.currentDepth = 0;
     this.runGoldCollected = 0;
     this.runDiamondsCollected = 0;
     this.runBlocksBroken = 0;
     this.explosiveCharge = 0;
+    this.playerHp = PLAYER_MAX_HP;
     this.emit('depthChanged', 0);
+    this.emit('playerHpChanged', this.playerHp);
   }
 
   public doubleRunGold(): void {

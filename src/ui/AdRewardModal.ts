@@ -10,32 +10,48 @@ export interface AdRewardModalOptions {
 
 /**
  * Rewarded Ad Modal — Phaser-native overlay for voluntary rewarded ads.
- * Replaces the HTML-based simulation in AdManager for a seamless in-game experience.
+ * The browser build uses this simulated version; native builds play a real
+ * AdMob video via AdManager.
+ *
+ * Every piece is a top-level, scroll-factor-0 object. Phaser hit-tests
+ * children of a Container in registration order instead of visual order and
+ * ignores the container's scroll factor, so nesting the dim + buttons would
+ * let the full-screen dim swallow button taps (or offset their hit areas).
  */
-export class AdRewardModal extends Phaser.GameObjects.Container {
+export class AdRewardModal {
+  private scene: Phaser.Scene;
   private options: AdRewardModalOptions;
-  private background: Phaser.GameObjects.Graphics;
-  private panel: Phaser.GameObjects.Graphics;
+  private objects: Array<Phaser.GameObjects.Graphics | Phaser.GameObjects.Text> = [];
   private timerText: Phaser.GameObjects.Text;
   private countdown: number = 3;
   private timerEvent: Phaser.Time.TimerEvent | null = null;
+  private finished = false;
 
   constructor(scene: Phaser.Scene, options: AdRewardModalOptions) {
-    super(scene, 0, 0);
+    this.scene = scene;
     this.options = options;
-
-    this.setScrollFactor(0);
-    this.setDepth(2000);
-    this.setAlpha(0);
 
     const { width, height } = scene.scale;
 
-    // Full-screen dimming background
-    this.background = scene.add.graphics();
-    this.background.fillStyle(0x000000, 0.85);
-    this.background.fillRect(0, 0, width, height);
-    this.background.setInteractive(new Phaser.Geom.Rectangle(0, 0, width, height), Phaser.Geom.Rectangle.Contains);
-    this.add(this.background);
+    const add = <T extends Phaser.GameObjects.Graphics | Phaser.GameObjects.Text>(
+      obj: T,
+      depth: number
+    ): T => {
+      obj.setScrollFactor(0);
+      obj.setAlpha(0);
+      obj.setDepth(depth);
+      this.objects.push(obj);
+      return obj;
+    };
+
+    // Full-screen dimming background (blocks input to whatever is behind)
+    const background = add(scene.add.graphics(), 2000);
+    background.fillStyle(0x000000, 0.85);
+    background.fillRect(0, 0, width, height);
+    background.setInteractive(
+      new Phaser.Geom.Rectangle(0, 0, width, height),
+      Phaser.Geom.Rectangle.Contains
+    );
 
     // Centered panel
     const panelW = Math.min(width - 40, 340);
@@ -43,77 +59,93 @@ export class AdRewardModal extends Phaser.GameObjects.Container {
     const panelX = (width - panelW) / 2;
     const panelY = (height - panelH) / 2;
 
-    this.panel = scene.add.graphics();
-    this.panel.fillStyle(0x1e1b4b, 1);
-    this.panel.fillRoundedRect(panelX, panelY, panelW, panelH, 16);
-    this.panel.lineStyle(2, 0x818cf8, 1);
-    this.panel.strokeRoundedRect(panelX, panelY, panelW, panelH, 16);
-    this.add(this.panel);
+    const panel = add(scene.add.graphics(), 2000);
+    panel.fillStyle(0x1e1b4b, 1);
+    panel.fillRoundedRect(panelX, panelY, panelW, panelH, 16);
+    panel.lineStyle(2, 0x818cf8, 1);
+    panel.strokeRoundedRect(panelX, panelY, panelW, panelH, 16);
 
-    // Title
-    const titleText = scene.add.text(
-      width / 2,
-      panelY + 28,
-      '📺 Rewarded Ad',
-      { fontSize: '20px', fontStyle: 'bold', color: '#f8fafc' }
-    ).setOrigin(0.5);
-    this.add(titleText);
+    add(
+      scene.add
+        .text(width / 2, panelY + 28, '📺 Rewarded Ad', {
+          fontSize: '20px',
+          fontStyle: 'bold',
+          color: '#f8fafc',
+        })
+        .setOrigin(0.5),
+      2000
+    );
 
-    // Placement badge
-    const badgeText = scene.add.text(
-      width / 2,
-      panelY + 54,
-      this.options.placement.replace('_', ' ').toUpperCase(),
-      { fontSize: '12px', fontStyle: 'bold', color: '#a5b4fc', backgroundColor: '#312e81', padding: { x: 8, y: 3 } }
-    ).setOrigin(0.5);
-    this.add(badgeText);
+    add(
+      scene.add
+        .text(width / 2, panelY + 54, this.options.placement.replace('_', ' ').toUpperCase(), {
+          fontSize: '12px',
+          fontStyle: 'bold',
+          color: '#a5b4fc',
+          backgroundColor: '#312e81',
+          padding: { x: 8, y: 3 },
+        })
+        .setOrigin(0.5),
+      2000
+    );
 
-    // Description
-    const descText = scene.add.text(
-      width / 2,
-      panelY + 86,
-      this.options.title,
-      { fontSize: '14px', color: '#94a3b8', wordWrap: { width: panelW - 40 }, align: 'center' }
-    ).setOrigin(0.5);
-    this.add(descText);
+    add(
+      scene.add
+        .text(width / 2, panelY + 86, this.options.title, {
+          fontSize: '14px',
+          color: '#94a3b8',
+          wordWrap: { width: panelW - 40 },
+          align: 'center',
+        })
+        .setOrigin(0.5),
+      2000
+    );
 
-    // Reward preview
-    const rewardText = scene.add.text(
-      width / 2,
-      panelY + 122,
-      this.options.rewardText,
-      { fontSize: '18px', fontStyle: 'bold', color: '#facc15', stroke: '#000000', strokeThickness: 2 }
-    ).setOrigin(0.5);
-    this.add(rewardText);
+    add(
+      scene.add
+        .text(width / 2, panelY + 122, this.options.rewardText, {
+          fontSize: '18px',
+          fontStyle: 'bold',
+          color: '#facc15',
+          stroke: '#000000',
+          strokeThickness: 2,
+        })
+        .setOrigin(0.5),
+      2000
+    );
 
-    // Timer
-    this.timerText = scene.add.text(
-      width / 2,
-      panelY + 158,
-      `Ad playing... (${this.countdown}s)`,
-      { fontSize: '16px', fontStyle: 'bold', color: '#38bdf8' }
-    ).setOrigin(0.5);
-    this.add(this.timerText);
+    this.timerText = add(
+      scene.add
+        .text(width / 2, panelY + 158, `Simulated ad · ${this.countdown}s`, {
+          fontSize: '16px',
+          fontStyle: 'bold',
+          color: '#38bdf8',
+        })
+        .setOrigin(0.5),
+      2000
+    );
 
-    // Cancel button
-    const cancelBtn = scene.add.text(
-      width / 2,
-      panelY + 190,
-      'Cancel',
-      { fontSize: '13px', color: '#f87171', backgroundColor: '#1c1917', padding: { x: 16, y: 4 } }
-    ).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    // Cancel button (higher depth than the dim so it always wins the hit test)
+    const cancelBtn = add(
+      scene.add
+        .text(width / 2, panelY + 190, 'Cancel', {
+          fontSize: '13px',
+          color: '#f87171',
+          backgroundColor: '#1c1917',
+          padding: { x: 16, y: 4 },
+        })
+        .setOrigin(0.5)
+        .setInteractive({ useHandCursor: true }),
+      2001
+    );
 
     cancelBtn.on('pointerover', () => cancelBtn.setStyle({ color: '#fca5a5' }));
     cancelBtn.on('pointerout', () => cancelBtn.setStyle({ color: '#f87171' }));
     cancelBtn.on('pointerdown', () => this.cancel());
 
-    this.add(cancelBtn);
-
-    scene.add.existing(this);
-
-    // Fade in
+    // Fade in, then start the countdown
     scene.tweens.add({
-      targets: this,
+      targets: this.objects,
       alpha: 1,
       duration: 200,
       ease: 'Power2',
@@ -122,13 +154,14 @@ export class AdRewardModal extends Phaser.GameObjects.Container {
   }
 
   private startCountdown(): void {
+    if (this.finished) return;
     this.timerEvent = this.scene.time.addEvent({
       delay: 1000,
       repeat: this.countdown,
       callback: () => {
         this.countdown--;
         if (this.countdown > 0) {
-          this.timerText.setText(`Ad playing... (${this.countdown}s)`);
+          this.timerText.setText(`Simulated ad · ${this.countdown}s`);
         } else {
           this.complete();
         }
@@ -141,25 +174,27 @@ export class AdRewardModal extends Phaser.GameObjects.Container {
     this.timerText.setColor('#4ade80');
 
     this.scene.time.delayedCall(600, () => {
-      this.destroy(true);
-      this.options.onSuccess();
+      this.finish(() => this.options.onSuccess());
     });
   }
 
   private cancel(): void {
-    if (this.timerEvent) {
-      this.timerEvent.remove();
-      this.timerEvent = null;
-    }
-    this.destroy(true);
-    if (this.options.onCancel) this.options.onCancel();
+    this.finish(() => {
+      if (this.options.onCancel) this.options.onCancel();
+    });
   }
 
-  public destroy(fromScene?: boolean): void {
+  private finish(action: () => void): void {
+    if (this.finished) return;
+    this.finished = true;
+
     if (this.timerEvent) {
       this.timerEvent.remove();
       this.timerEvent = null;
     }
-    super.destroy(fromScene);
+    this.objects.forEach((obj) => obj.destroy());
+    this.objects = [];
+
+    action();
   }
 }

@@ -3,7 +3,8 @@ import { Block } from '../entities/Block';
 import { Player } from '../entities/Player';
 import { Enemy } from '../entities/Enemy';
 import { Collectible, CollectibleKind } from '../entities/Collectible';
-import { GameState } from '../core/GameState';
+import { GameState, PLAYER_MAX_HP } from '../core/GameState';
+import { Ads } from '../core/AdManager';
 import { PICKAXES_CONFIG, PickaxeType } from '../config/pickaxes';
 import { getRandomBlockForDepth } from '../config/blocks';
 import { shouldEnemySpawn, getRandomEnemyForDepth, ENEMIES_CONFIG } from '../config/enemies';
@@ -34,6 +35,15 @@ export class GameScene extends Phaser.Scene {
   // Combat
   private isAttacking: boolean = false;
 
+  // Player survival & revive (second-chance ad) flow.
+  // Overlay pieces are top-level objects: Phaser hit-tests Container children
+  // in registration order and ignores the container's scroll factor, which
+  // would let the full-screen dim swallow taps aimed at the buttons.
+  private isCollapsed: boolean = false;
+  private reviveUsedThisRun: boolean = false;
+  private invulnUntil: number = 0;
+  private collapseObjects: Array<Phaser.GameObjects.Graphics | Phaser.GameObjects.Text> = [];
+
   // Particle emitter
   private particles!: Phaser.GameObjects.Particles.ParticleEmitter;
 
@@ -53,6 +63,10 @@ export class GameScene extends Phaser.Scene {
     this.isMining = false;
     this.isAttacking = false;
     this.explosiveHitCount = 0;
+    this.isCollapsed = false;
+    this.reviveUsedThisRun = false;
+    this.invulnUntil = 0;
+    this.collapseObjects = [];
 
     GameState.startNewRun();
 
@@ -145,6 +159,201 @@ export class GameScene extends Phaser.Scene {
     this.scene.start('GameOverScene');
   }
 
+  // ─── Player Survival & Second Chance ─────────────────────────────────────
+
+  /** Applies enemy damage to the transient run HP. */
+  private damagePlayer(damage: number): void {
+    if (this.isCollapsed) return;
+    if (this.time.now < this.invulnUntil) return;
+
+    GameState.setPlayerHp(GameState.playerHp - damage);
+    GameState.triggerHaptic(40);
+    this.cameras.main.shake(120, 0.004);
+    this.cameras.main.flash(160, 190, 30, 30);
+
+    if (GameState.playerHp <= 0) {
+      this.collapse();
+    }
+  }
+
+  /** Opens the "second chance" prompt when the player runs out of HP. */
+  private collapse(): void {
+    if (this.isCollapsed) return;
+    this.isCollapsed = true;
+
+    // Freeze enemies so the prompt has a calm backdrop
+    for (const enemy of this.enemies.values()) enemy.pauseAI();
+
+    const { width, height } = this.scale;
+
+    // Overlay pieces are top-level objects so input priority follows depth.
+    const pieces: Array<Phaser.GameObjects.Graphics | Phaser.GameObjects.Text> = [];
+    const add = <T extends Phaser.GameObjects.Graphics | Phaser.GameObjects.Text>(
+      obj: T,
+      depth: number
+    ): T => {
+      obj.setScrollFactor(0);
+      obj.setAlpha(0);
+      obj.setDepth(depth);
+      pieces.push(obj);
+      return obj;
+    };
+
+    // Full-screen dim — blocks taps to whatever is behind (e.g. Give Up)
+    const dim = add(this.add.graphics(), 1500);
+    dim.fillStyle(0x000000, 0.74);
+    dim.fillRect(0, 0, width, height);
+    dim.setInteractive(
+      new Phaser.Geom.Rectangle(0, 0, width, height),
+      Phaser.Geom.Rectangle.Contains
+    );
+
+    const canRevive = !this.reviveUsedThisRun;
+    const panelW = 300;
+    const panelH = canRevive ? 240 : 196;
+    const panelX = (width - panelW) / 2;
+    const panelY = (height - panelH) / 2;
+
+    const panel = add(this.add.graphics(), 1501);
+    panel.fillStyle(0x1e1b4b, 1);
+    panel.fillRoundedRect(panelX, panelY, panelW, panelH, 16);
+    panel.lineStyle(2, 0xef4444, 0.9);
+    panel.strokeRoundedRect(panelX, panelY, panelW, panelH, 16);
+
+    add(
+      this.add
+        .text(width / 2, panelY + 32, '💀 YOU COLLAPSED!', {
+          fontSize: '20px',
+          fontStyle: 'bold',
+          color: '#f87171',
+        })
+        .setOrigin(0.5),
+      1501
+    );
+
+    add(
+      this.add
+        .text(width / 2, panelY + 62, `Depth ${GameState.currentDepth}m · Your loot is safe`, {
+          fontSize: '12px',
+          color: '#94a3b8',
+        })
+        .setOrigin(0.5),
+      1501
+    );
+
+    let buttonY = panelY + 92;
+
+    if (canRevive) {
+      const reviveBg = add(this.add.graphics(), 1502);
+      reviveBg.fillStyle(0x16a34a, 1);
+      reviveBg.fillRoundedRect(panelX + 20, buttonY, panelW - 40, 46, 12);
+      reviveBg.setInteractive(
+        new Phaser.Geom.Rectangle(panelX + 20, buttonY, panelW - 40, 46),
+        Phaser.Geom.Rectangle.Contains
+      );
+      reviveBg.on('pointerdown', () => {
+        if (GameState.soundEnabled) Sound.play('ui_click');
+        Ads.showRewardedAd(
+          this,
+          'revive',
+          'Watch a short ad to get back on your feet!',
+          'Full HP + 3s Shield',
+          () => this.revivePlayer()
+        );
+      });
+
+      add(
+        this.add
+          .text(width / 2, buttonY + 16, '📺 REVIVE · WATCH AD', {
+            fontSize: '14px',
+            fontStyle: 'bold',
+            color: '#f0fdf4',
+          })
+          .setOrigin(0.5),
+        1502
+      );
+      add(
+        this.add
+          .text(width / 2, buttonY + 34, 'Full HP + 3s shield', {
+            fontSize: '10px',
+            color: '#bbf7d0',
+          })
+          .setOrigin(0.5),
+        1502
+      );
+
+      buttonY += 58;
+    } else {
+      add(
+        this.add
+          .text(width / 2, buttonY, 'Revive already used this run', {
+            fontSize: '11px',
+            color: '#64748b',
+          })
+          .setOrigin(0.5),
+        1501
+      );
+      buttonY += 26;
+    }
+
+    const endBg = add(this.add.graphics(), 1502);
+    endBg.fillStyle(0x334155, 1);
+    endBg.fillRoundedRect(panelX + 20, buttonY, panelW - 40, 38, 10);
+    endBg.setInteractive(
+      new Phaser.Geom.Rectangle(panelX + 20, buttonY, panelW - 40, 38),
+      Phaser.Geom.Rectangle.Contains
+    );
+    endBg.on('pointerdown', () => {
+      if (GameState.soundEnabled) Sound.play('ui_click');
+      this.endRun();
+    });
+
+    add(
+      this.add
+        .text(width / 2, buttonY + 19, '🏁 END RUN', {
+          fontSize: '13px',
+          fontStyle: 'bold',
+          color: '#e2e8f0',
+        })
+        .setOrigin(0.5),
+      1502
+    );
+
+    this.collapseObjects = pieces;
+    this.tweens.add({ targets: pieces, alpha: 1, duration: 220, ease: 'Power2' });
+  }
+
+  /** Grants the revive ad reward: full HP, a brief shield and breathing room. */
+  private revivePlayer(): void {
+    if (!this.isCollapsed) return;
+
+    this.reviveUsedThisRun = true;
+    this.isCollapsed = false;
+
+    GameState.setPlayerHp(PLAYER_MAX_HP);
+    this.invulnUntil = this.time.now + 3000;
+    GameState.triggerHaptic(30);
+    if (GameState.soundEnabled) Sound.play('level_up');
+
+    if (this.collapseObjects.length > 0) {
+      this.collapseObjects.forEach((obj) => obj.destroy());
+      this.collapseObjects = [];
+    }
+
+    // Scatter enemies near the player so the revive isn't instant death.
+    for (const [key, enemy] of [...this.enemies]) {
+      if (Phaser.Math.Distance.Between(this.player.x, this.player.y, enemy.x, enemy.y) < 140) {
+        this.particles.setPosition(enemy.x, enemy.y);
+        this.particles.setParticleTint(0xef4444);
+        this.particles.explode(10);
+        enemy.destroy();
+        this.enemies.delete(key);
+      }
+    }
+
+    for (const enemy of this.enemies.values()) enemy.resumeAI();
+  }
+
   // ─── Grid Generation ────────────────────────────────────────────────────
 
   private gridKey(col: number, row: number): string {
@@ -207,7 +416,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tryMineAt(worldX: number, worldY: number): void {
-    if (this.isMining || this.isAttacking) return;
+    if (this.isMining || this.isAttacking || this.isCollapsed) return;
 
     // First, try to attack an enemy at this position
     if (this.tryAttackEnemy(worldX, worldY)) {
@@ -460,6 +669,7 @@ export class GameScene extends Phaser.Scene {
 
     const enemy = new Enemy(this, x, y, col, row, enemyType, efficiency);
     enemy.setTargetPlayer(this.player);
+    enemy.onPlayerHit = (damage) => this.damagePlayer(damage);
     this.enemies.set(key, enemy);
 
     // Spawn effect

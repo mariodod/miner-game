@@ -20,6 +20,10 @@ export class Enemy extends Phaser.GameObjects.Container {
   private moveTimer: Phaser.Time.TimerEvent | null = null;
   private attackCooldown: boolean = false;
   private targetPlayer: Phaser.GameObjects.Container | null = null;
+  private isAiPaused: boolean = false;
+
+  /** Called when this enemy lands a hit on the player (GameScene applies it). */
+  public onPlayerHit: ((damage: number) => void) | null = null;
   private damageFlashTimer: Phaser.Time.TimerEvent | null = null;
   private damageFlashGraphics: Phaser.GameObjects.Graphics | null = null;
 
@@ -233,7 +237,7 @@ export class Enemy extends Phaser.GameObjects.Container {
   }
 
   private decideAction(): void {
-    if (this.isDead || this.isStunned) return;
+    if (this.isDead || this.isStunned || this.isAiPaused) return;
 
     // Find player if nearby
     if (this.targetPlayer && !this.attackCooldown) {
@@ -308,7 +312,7 @@ export class Enemy extends Phaser.GameObjects.Container {
   }
 
   private attackPlayer(): void {
-    if (this.attackCooldown || !this.targetPlayer) return;
+    if (this.attackCooldown || !this.targetPlayer || this.isAiPaused || this.isDead) return;
     this.attackCooldown = true;
 
     // Visual attack indicator
@@ -320,7 +324,10 @@ export class Enemy extends Phaser.GameObjects.Container {
       yoyo: true,
       ease: 'Quad.easeIn',
       onComplete: () => {
-        // Deal damage to player (placeholder - would need player ref)
+        // Land the hit on the player (GameScene applies the HP loss).
+        if (this.active && !this.isDead && this.onPlayerHit) {
+          this.onPlayerHit(this.config.damage);
+        }
         if (GameState.soundEnabled) Sound.play('block_hit');
         this.attackCooldown = false;
       },
@@ -333,6 +340,17 @@ export class Enemy extends Phaser.GameObjects.Container {
 
   public setTargetPlayer(player: Phaser.GameObjects.Container): void {
     this.targetPlayer = player;
+  }
+
+  /** Freezes AI decisions (used while the collapse/revive prompt is open). */
+  public pauseAI(): void {
+    this.isAiPaused = true;
+    if (this.moveTimer) this.moveTimer.paused = true;
+  }
+
+  public resumeAI(): void {
+    this.isAiPaused = false;
+    if (this.moveTimer) this.moveTimer.paused = false;
   }
 
   public takeDamage(damage: number, fromX: number, fromY: number): { dead: boolean; exp: number; gold?: number; diamonds?: number } {

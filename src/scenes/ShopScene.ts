@@ -3,6 +3,7 @@ import { GameState } from '../core/GameState';
 import { PICKAXES_CONFIG, PickaxeId, PickaxeType } from '../config/pickaxes';
 import { SKINS_CONFIG, UPGRADES_CONFIG } from '../config/economy';
 import { Sound } from '../core/SoundManager';
+import { Ads } from '../core/AdManager';
 
 type ShopTab = 'pickaxes' | 'upgrades' | 'skins';
 
@@ -32,6 +33,7 @@ export class ShopScene extends Phaser.Scene {
   private lastContentBottom = 0;
   private scrollMinY = 0;
   private persistedScrollOffset = 0; // ≤ 0 px, survives scene restarts
+  private chestReward: number | null = null; // last free-chest reward (shown on the card)
   private scrollItems: ScrollItem[] = [];
   private scrollbarGfx!: Phaser.GameObjects.Graphics;
   private scrollHint!: Phaser.GameObjects.Text;
@@ -50,6 +52,7 @@ export class ShopScene extends Phaser.Scene {
   create() {
     const { width, height } = this.scale;
     this.scrollItems = [];
+    this.chestReward = null;
 
     // Dark background
     const bg = this.add.graphics();
@@ -553,6 +556,69 @@ export class ShopScene extends Phaser.Scene {
     let y = 8;
     const cardH = 92;
     const gapY = 10;
+
+    // ── Free Diamond Chest (voluntary rewarded ad) ──
+    {
+      const chestH = 96;
+      const cardBg = this.add.graphics();
+      cardBg.fillStyle(0x2a1c07, 1);
+      cardBg.fillRoundedRect(12, y, width - 24, chestH, 12);
+      cardBg.lineStyle(1.5, 0xf59e0b, 1);
+      cardBg.strokeRoundedRect(12, y, width - 24, chestH, 12);
+      this.content.add(cardBg);
+
+      const chestIcon = this.add.text(38, y + 30, '🎁', { fontSize: '26px' }).setOrigin(0.5);
+      this.content.add(chestIcon);
+
+      const chestName = this.add.text(64, y + 10, 'Free Diamond Chest', {
+        fontSize: '14px',
+        fontStyle: 'bold',
+        color: '#fde68a',
+      });
+      this.content.add(chestName);
+
+      const chestDesc = this.add.text(64, y + 30, 'Watch a short ad and crack it open — mystery gems inside!', {
+        fontSize: '10px',
+        color: '#94a3b8',
+        wordWrap: { width: width - 150 },
+      });
+      this.content.add(chestDesc);
+
+      const chestBtnLabel =
+        this.chestReward !== null
+          ? `✅ +${this.chestReward} 💎 · OPEN AGAIN`
+          : '📺 WATCH AD · +2-5 💎';
+      const chestBtn = this.add
+        .text(width / 2, y + 74, chestBtnLabel, {
+          fontSize: '12px',
+          fontStyle: 'bold',
+          color: '#1c1917',
+          backgroundColor: '#f59e0b',
+          padding: { x: 14, y: 6 },
+        })
+        .setOrigin(0.5)
+        .setInteractive({ useHandCursor: true });
+      chestBtn.on('pointerdown', () => {
+        if (GameState.soundEnabled) Sound.play('ui_click');
+        const reward = Phaser.Math.Between(2, 5);
+        Ads.showRewardedAd(
+          this,
+          'free_chest',
+          'A mystery diamond chest is waiting!',
+          `+${reward} 💎`,
+          () => {
+            this.chestReward = reward;
+            GameState.addDiamonds(reward);
+            if (GameState.soundEnabled) Sound.play('diamond_collect');
+            this.restartShop();
+          }
+        );
+      });
+      this.content.add(chestBtn);
+      this.registerScrollItem(y + 74, chestBtn);
+
+      y += chestH + gapY;
+    }
 
     SKINS_CONFIG.forEach((skin) => {
       const isUnlocked = GameState.unlockedSkins.includes(skin.id);

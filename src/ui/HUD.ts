@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GameState } from '../core/GameState';
+import { GameState, PLAYER_MAX_HP } from '../core/GameState';
 import { PICKAXES_CONFIG, PickaxeId } from '../config/pickaxes';
 import { Sound } from '../core/SoundManager';
 
@@ -14,6 +14,7 @@ export class HUD extends Phaser.GameObjects.Container {
   private depthText: Phaser.GameObjects.Text;
   private goldText: Phaser.GameObjects.Text;
   private diamondText: Phaser.GameObjects.Text;
+  private hpText: Phaser.GameObjects.Text;
   private pickaxeBadge: Phaser.GameObjects.Container;
   private pickaxeIcon: Phaser.GameObjects.Sprite;
   private pickaxeLabel: Phaser.GameObjects.Text;
@@ -69,6 +70,16 @@ export class HUD extends Phaser.GameObjects.Container {
     this.add(gemIcon);
     this.add(this.diamondText);
 
+    // Player HP (transient run health) — hearts under the banner
+    this.hpText = scene.add.text(14, 62, `❤️ ${GameState.playerHp}/${PLAYER_MAX_HP}`, {
+      fontSize: '13px',
+      fontStyle: 'bold',
+      color: '#f87171',
+      backgroundColor: '#0f172a',
+      padding: { x: 6, y: 3 },
+    });
+    this.add(this.hpText);
+
     // Equipped Pickaxe Badge (clickable to go to Shop)
     this.pickaxeBadge = scene.add.container(width - 45, 34);
     const badgeBg = scene.add.circle(0, 0, 18, 0x1e293b, 1);
@@ -119,6 +130,13 @@ export class HUD extends Phaser.GameObjects.Container {
       GameState.on('diamondsChanged', (diamonds: number) => {
         this.diamondText.setText(`${diamonds}`);
         this.pulseText(this.diamondText);
+      })
+    );
+
+    this.unsubs.push(
+      GameState.on('playerHpChanged', (hp: number) => {
+        this.hpText.setText(`❤️ ${hp}/${PLAYER_MAX_HP}`);
+        this.pulseText(this.hpText);
       })
     );
 

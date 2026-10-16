@@ -3,7 +3,7 @@ import { Block } from '../entities/Block';
 import { Player } from '../entities/Player';
 import { Enemy } from '../entities/Enemy';
 import { Collectible, CollectibleKind } from '../entities/Collectible';
-import { GameState, PLAYER_MAX_HP, DepthMilestoneInfo, NewRecordInfo } from '../core/GameState';
+import { GameState, PLAYER_MAX_HP, DepthMilestoneInfo, NewRecordInfo, BossSpawnInfo } from '../core/GameState';
 import { Ads } from '../core/AdManager';
 import { PICKAXES_CONFIG, PickaxeType } from '../config/pickaxes';
 import { BLOCKS_CONFIG, getRandomBlockForDepth } from '../config/blocks';
@@ -157,11 +157,12 @@ export class GameScene extends Phaser.Scene {
     this.input.on('pointermove', this.onPointerMove, this);
     this.input.on('pointerup', this.onPointerUp, this);
 
-    // Depth celebrations (milestone chests, records, biome changes)
+    // Depth celebrations (milestone chests, records, biomes, elite bosses)
     const unsubs = [
       GameState.on('depthMilestone', (info: DepthMilestoneInfo) => this.onDepthMilestone(info)),
       GameState.on('newRecord', (info: NewRecordInfo) => this.onNewRecord(info)),
       GameState.on('biomeChanged', (biome: BiomeDef) => this.applyBiome(biome, true)),
+      GameState.on('bossSpawn', (info: BossSpawnInfo) => this.onBossSpawn(info)),
     ];
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => unsubs.forEach((unsub) => unsub()));
 
@@ -786,6 +787,67 @@ export class GameScene extends Phaser.Scene {
     freeze(this, 90);
   }
 
+  /**
+   * TNT blast: breaks every breakable block in the surrounding 3x3,
+   * damages enemies caught in it, and chains into other TNT tiles.
+   */
+  private detonateTNT(col: number, row: number): void {
+    const cx = col * BLOCK_SIZE + BLOCK_SIZE / 2;
+    const cy = row * BLOCK_SIZE + BLOCK_SIZE / 2;
+
+    if (GameState.soundEnabled) Sound.play('explosion');
+    GameState.triggerHaptic(40);
+    freeze(this, 80);
+    shake(this, 240, 0.006);
+
+    // Orange blast flash over the 3x3
+    const flashOverlay = this.add.graphics();
+    flashOverlay.fillStyle(0xfb923c, 0.5);
+    flashOverlay.fillRect(
+      (col - 1) * BLOCK_SIZE,
+      (row - 1) * BLOCK_SIZE,
+      BLOCK_SIZE * 3,
+      BLOCK_SIZE * 3
+    );
+    flashOverlay.setDepth(500);
+    this.tweens.add({
+      targets: flashOverlay,
+      alpha: 0,
+      duration: 320,
+      onComplete: () => flashOverlay.destroy(),
+    });
+
+    this.particles.setPosition(cx, cy);
+    this.particles.setParticleTint(0xf97316);
+    this.particles.explode(20);
+
+    for (let r = row - 1; r <= row + 1; r++) {
+      for (let c = col - 1; c <= col + 1; c++) {
+        if (c === col && r === row) continue;
+        const b = this.blocks.get(this.gridKey(c, r));
+        if (!b || b.isBroken || b.blockType === 'bedrock') continue;
+        const res = b.hit(999); // blast force shatters anything breakable
+        this.particles.setPosition(c * BLOCK_SIZE + BLOCK_SIZE / 2, r * BLOCK_SIZE + BLOCK_SIZE / 2);
+        this.particles.explode(5);
+        // onBlockBroken re-arms chained TNT automatically
+        if (res.broken) this.onBlockBroken(b, c, r, res.gold, res.diamonds);
+      }
+    }
+
+    // Blast wave also hurts enemies caught in the 3x3
+    const blastDamage = 5;
+    for (const e of [...this.enemies.values()]) {
+      if (e.isDead) continue;
+      if (Math.abs(e.gridX - col) <= 1 && Math.abs(e.gridY - row) <= 1) {
+        const result = e.takeDamage(blastDamage, cx, cy);
+        this.spawnFloatingText(e.x + Phaser.Math.Between(-6, 6), e.y - 26, `${blastDamage}`, '#fdba74');
+        if (result.dead) {
+          this.onEnemyKilled(e, e.gridX, e.gridY, result.gold || 0, result.diamonds || 0);
+        }
+      }
+    }
+  }
+
   // ─── Block Broken Handler ────────────────────────────────────────────────
 
   private onBlockBroken(block: Block, col: number, row: number, gold: number, diamonds: number): void {
@@ -833,6 +895,22 @@ export class GameScene extends Phaser.Scene {
     // Rare heart drop while hurt — flying pickup that restores 1 HP
     if (GameState.playerHp < PLAYER_MAX_HP && Math.random() < 0.03) {
       this.spawnCollectible(worldX, worldY, 'heart', 1, true);
+    }
+
+    // TNT detonates a beat after being cracked open
+    if (block.blockType === 'tnt') {
+      this.time.delayedCall(90, () => this.detonateTNT(col, row));
+    }
+
+    // Treasure chests pop with a golden flourish
+    if (block.blockType === 'treasure') {
+      if (GameState.soundEnabled) Sound.play('treasure');
+      GameState.triggerHaptic(30);
+      freeze(this, 40);
+      this.particles.setPosition(worldX, worldY);
+      this.particles.setParticleTint(0xfbbf24);
+      this.particles.explode(16);
+      this.confettiBurst(worldX, worldY - 14, 10);
     }
 
     // Check if player can fall into broken space below
@@ -1009,6 +1087,13 @@ export class GameScene extends Phaser.Scene {
     this.spawnFloatingText(worldX, worldY - 50, `💀 ${enemy.config.name} Defeated!`, '#ef4444');
     shake(this, 90, 0.0025);
     freeze(this, 50);
+
+    // Elites go out with a bang
+    if (enemy.isElite) {
+      this.showBanner('💀 ELITE DOWN!', `${enemy.config.name} defeated`, '#fbbf24');
+      this.confettiBurst(worldX, worldY - 20, 22);
+      GameState.triggerHaptic(50);
+    }
   }
 
   // ─── Collectible Drops ───────────────────────────────────────────────────
@@ -1231,9 +1316,91 @@ export class GameScene extends Phaser.Scene {
     this.time.delayedCall(180, () => this.confettiBurst());
   }
 
-  private confettiBurst(): void {
-    this.confetti.setPosition(this.player.x, this.player.y - 60);
-    this.confetti.explode(18);
+  /** Spawns the elite mini-boss that guards each 100 m threshold. */
+  private onBossSpawn(info: BossSpawnInfo, attempt: number = 0): void {
+    const cell = this.findBossCell();
+    if (!cell) {
+      // Fully packed area — retry once after a beat, then give up quietly.
+      if (attempt < 1) {
+        this.time.delayedCall(1500, () => this.onBossSpawn(info, attempt + 1));
+      }
+      return;
+    }
+
+    const enemyType = getRandomEnemyForDepth(GameState.currentDepth) ?? 'bat';
+    const enemy = new Enemy(
+      this,
+      cell.x,
+      cell.y,
+      cell.col,
+      cell.row,
+      enemyType,
+      this.currentEfficiency(),
+      true
+    );
+    enemy.setTargetPlayer(this.player);
+    enemy.onPlayerHit = (damage) => this.damagePlayer(damage);
+    enemy.canStepTo = (c, r) => this.isCellPassableForEnemy(c, r, enemy);
+    enemy.onGridMove = (moved, oldCol, oldRow) => {
+      this.enemies.delete(this.enemyKey(oldCol, oldRow));
+      this.enemies.set(this.enemyKey(moved.gridX, moved.gridY), moved);
+    };
+    this.enemies.set(this.enemyKey(cell.col, cell.row), enemy);
+
+    // Dramatic entrance
+    this.particles.setPosition(cell.x, cell.y);
+    this.particles.setParticleTint(0xfbbf24);
+    this.particles.explode(16);
+    this.showBanner(`👑 ${ENEMIES_CONFIG[enemyType].name}!`, `Elite guard at ${info.depth}m`, '#fbbf24');
+    if (GameState.soundEnabled) Sound.play('boss');
+    GameState.triggerHaptic(60);
+    shake(this, 200, 0.004);
+    freeze(this, 60);
+  }
+
+  /**
+   * Finds an empty cell to place a boss — prefers a few rows ahead of the
+   * miner, falls back to the freshly dug shaft behind them.
+   */
+  private findBossCell(): { col: number; row: number; x: number; y: number } | null {
+    const pc = this.player.gridX;
+    const pr = this.player.gridY;
+    let best: { col: number; row: number; score: number } | null = null;
+
+    for (let dc = -5; dc <= 5; dc++) {
+      const col = pc + dc;
+      if (col < 0 || col >= COLS) continue;
+      for (let dr = -10; dr <= 14; dr++) {
+        const row = pr + dr;
+        if (row < 0 || row >= this.generatedRows) continue;
+        // Never spawn on top of the miner or inside the adjacent 3x3
+        if (Math.abs(dc) <= 1 && Math.abs(dr) <= 1) continue;
+        if (!this.isCellFree(col, row)) continue;
+        let occupied = false;
+        for (const e of this.enemies.values()) {
+          if (!e.isDead && e.gridX === col && e.gridY === row) {
+            occupied = true;
+            break;
+          }
+        }
+        if (occupied) continue;
+        const score = Math.abs(dc) * 2 + Math.abs(dr - 5); // straight ahead, ~5 rows down
+        if (!best || score < best.score) best = { col, row, score };
+      }
+    }
+
+    if (!best) return null;
+    return {
+      col: best.col,
+      row: best.row,
+      x: best.col * BLOCK_SIZE + BLOCK_SIZE / 2,
+      y: best.row * BLOCK_SIZE + BLOCK_SIZE / 2,
+    };
+  }
+
+  private confettiBurst(x?: number, y?: number, count: number = 18): void {
+    this.confetti.setPosition(x ?? this.player.x, y ?? this.player.y - 60);
+    this.confetti.explode(count);
   }
 
   /** Big centered announcement (biome arrivals, records). */

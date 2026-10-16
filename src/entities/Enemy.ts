@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { EnemyType, ENEMIES_CONFIG, calculateEnemyHp } from '../config/enemies';
+import { EnemyType, ENEMIES_CONFIG, calculateEnemyHp, ELITE_HP_MULTIPLIER, ELITE_DAMAGE_BONUS, ELITE_SPEED_MULTIPLIER, ELITE_GOLD_MULTIPLIER, ELITE_DIAMOND_BONUS } from '../config/enemies';
 import { GameState } from '../core/GameState';
 import { Sound } from '../core/SoundManager';
 
@@ -11,6 +11,7 @@ export class Enemy extends Phaser.GameObjects.Container {
   public currentHp: number;
   public isDead: boolean = false;
   public isStunned: boolean = false;
+  public isElite: boolean = false;
 
   private bodySprite!: Phaser.GameObjects.Graphics;
   private hpBarBg!: Phaser.GameObjects.Graphics;
@@ -42,7 +43,8 @@ export class Enemy extends Phaser.GameObjects.Container {
     gridX: number,
     gridY: number,
     enemyType: EnemyType,
-    pickaxeEfficiency: number = 1
+    pickaxeEfficiency: number = 1,
+    elite: boolean = false
   ) {
     super(scene, x, y);
 
@@ -50,14 +52,24 @@ export class Enemy extends Phaser.GameObjects.Container {
     this.gridY = gridY;
     this.enemyType = enemyType;
     this.config = ENEMIES_CONFIG[enemyType];
+    this.isElite = elite;
 
     // Calculate HP based on current depth
     const depth = gridY * 3; // Same depth calculation as blocks
     this.maxHp = calculateEnemyHp(this.config, depth, pickaxeEfficiency);
+    if (elite) this.maxHp = Math.ceil(this.maxHp * ELITE_HP_MULTIPLIER);
     this.currentHp = this.maxHp;
 
     this.createVisuals();
     this.setupPhysics();
+
+    // Elite guards announce themselves: crown name and a permanent HP bar
+    if (elite) {
+      this.nameText.setText(`👑 ${this.config.name}`);
+      this.nameText.setVisible(true);
+      this.hpBarBg.setVisible(true);
+      this.hpBarFill.setVisible(true);
+    }
 
     scene.add.existing(this);
     this.setDepth(50);
@@ -94,6 +106,7 @@ export class Enemy extends Phaser.GameObjects.Container {
       color: '#f1f5f9',
       stroke: '#000000',
       strokeThickness: 2,
+      padding: { x: 4, y: 2 },
     }).setOrigin(0.5).setVisible(false);
     this.add(this.nameText);
   }
@@ -102,7 +115,7 @@ export class Enemy extends Phaser.GameObjects.Container {
     const g = this.bodySprite;
     g.clear();
     const BLOCK_SIZE = 48;
-    const size = BLOCK_SIZE * 0.7;
+    const size = BLOCK_SIZE * 0.7 * (this.isElite ? 1.25 : 1);
     const half = size / 2;
 
     // Body shape varies by enemy type
@@ -201,6 +214,18 @@ export class Enemy extends Phaser.GameObjects.Container {
       g.fillStyle(this.config.accentColor, 1);
       g.fillCircle(-5, -3, 4);
       g.fillCircle(5, -3, 4);
+    }
+
+    // Elite: gold crown + aura ring
+    if (this.isElite) {
+      const crownY = -half - 5;
+      g.fillStyle(0xfbbf24, 1);
+      g.fillTriangle(-9, crownY, -6, crownY - 7, -3, crownY);
+      g.fillTriangle(-3, crownY, 0, crownY - 9, 3, crownY);
+      g.fillTriangle(3, crownY, 6, crownY - 7, 9, crownY);
+      g.fillRect(-9, crownY, 18, 3);
+      g.lineStyle(2, 0xfbbf24, 0.85);
+      g.strokeCircle(0, 0, half + 3);
     }
   }
 
@@ -310,7 +335,8 @@ export class Enemy extends Phaser.GameObjects.Container {
     const oldCol = this.gridX;
     const oldRow = this.gridY;
     // Faster enemies hop quicker; clamped so nothing teleports or crawls.
-    const duration = Phaser.Math.Clamp(Math.round(18000 / this.config.speed), 280, 900);
+    const speed = this.config.speed * (this.isElite ? ELITE_SPEED_MULTIPLIER : 1);
+    const duration = Phaser.Math.Clamp(Math.round(18000 / speed), 280, 900);
 
     this.isMoving = true;
 
@@ -347,7 +373,7 @@ export class Enemy extends Phaser.GameObjects.Container {
       onComplete: () => {
         // Land the hit on the player (GameScene applies the HP loss).
         if (this.active && !this.isDead && this.onPlayerHit) {
-          this.onPlayerHit(this.config.damage);
+          this.onPlayerHit(this.config.damage + (this.isElite ? ELITE_DAMAGE_BONUS : 0));
         }
         if (GameState.soundEnabled) Sound.play('block_hit');
         this.attackCooldown = false;
@@ -447,10 +473,10 @@ export class Enemy extends Phaser.GameObjects.Container {
       },
     });
 
-    // Drop rewards
+    // Drop rewards (elite guards pay out far more)
     const depth = this.gridY * 3;
-    const gold = this.config.dropGold(depth);
-    const diamonds = this.config.dropDiamonds(depth);
+    const gold = Math.round(this.config.dropGold(depth) * (this.isElite ? ELITE_GOLD_MULTIPLIER : 1));
+    const diamonds = this.config.dropDiamonds(depth) + (this.isElite ? ELITE_DIAMOND_BONUS : 0);
 
     if (GameState.soundEnabled) Sound.play('block_break');
 

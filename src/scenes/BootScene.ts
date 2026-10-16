@@ -80,6 +80,34 @@ export class BootScene extends Phaser.Scene {
         g.fillStyle(0xffffff, 0.9);
         g.fillRect(13, 16, 2, 2);
         g.fillRect(31, 24, 2, 2);
+      } else if (key === 'tnt') {
+        // Fuse band + white "TNT" lettering
+        g.fillStyle(0x450a0a, 0.6);
+        g.fillRect(4, 16, BLOCK_SIZE - 8, 16);
+        g.fillStyle(0xffffff, 1);
+        // T
+        g.fillRect(11, 20, 7, 2);
+        g.fillRect(13.5, 22, 2, 8);
+        // N
+        g.fillRect(21, 20, 2, 10);
+        g.fillRect(27, 20, 2, 10);
+        g.lineStyle(2, 0xffffff, 1);
+        g.lineBetween(22, 21, 28, 29);
+        // T
+        g.fillRect(32, 20, 7, 2);
+        g.fillRect(34.5, 22, 2, 8);
+      } else if (key === 'treasure') {
+        // Chest: lighter lid, gold bands and a lock plate
+        g.fillStyle(0x92400e, 1);
+        g.fillRect(3, 3, BLOCK_SIZE - 6, 16);
+        g.fillStyle(0xfbbf24, 1);
+        g.fillRect(3, 19, BLOCK_SIZE - 6, 4);
+        g.fillRect(10, 3, 3, BLOCK_SIZE - 8);
+        g.fillRect(BLOCK_SIZE - 13, 3, 3, BLOCK_SIZE - 8);
+        g.fillStyle(0xb45309, 1);
+        g.fillRoundedRect(19, 14, 10, 12, 2);
+        g.fillStyle(0x451a03, 1);
+        g.fillCircle(24, 20, 2);
       } else if (key === 'obsidian') {
         g.fillStyle(0x6366f1, 0.7);
         g.fillRect(12, 8, 4, 16);

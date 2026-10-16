@@ -17,6 +17,8 @@ export type SoundEffect =
   | 'level_up'
   | 'explosion'
   | 'record'
+  | 'treasure'
+  | 'boss'
   | 'ui_click'
   | 'game_over';
 
@@ -140,6 +142,23 @@ const SOUND_PRESETS: Record<SoundEffect, SoundConfig> = {
     attack: 0.01,
     decay: 0.55,
     pitchSlide: 2,
+  },
+  treasure: {
+    type: 'triangle',
+    frequency: [784, 988, 1175, 1568], // G5 B5 D6 G6 — sparkling jackpot
+    duration: 0.5,
+    volume: 0.2,
+    attack: 0.01,
+    decay: 0.4,
+  },
+  boss: {
+    type: 'sawtooth',
+    frequency: [98, 87, 73], // low descending growl
+    duration: 0.6,
+    volume: 0.18,
+    attack: 0.02,
+    decay: 0.5,
+    pitchSlide: -6,
   },
   ui_click: {
     type: 'square',

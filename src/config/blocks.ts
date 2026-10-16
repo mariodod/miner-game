@@ -1,4 +1,13 @@
-export type BlockType = 'dirt' | 'stone' | 'granite' | 'gold' | 'diamond' | 'obsidian' | 'bedrock';
+export type BlockType =
+  | 'dirt'
+  | 'stone'
+  | 'granite'
+  | 'gold'
+  | 'diamond'
+  | 'obsidian'
+  | 'tnt'
+  | 'treasure'
+  | 'bedrock';
 
 export interface BlockConfig {
   id: BlockType;
@@ -85,6 +94,30 @@ export const BLOCKS_CONFIG: Record<BlockType, BlockConfig> = {
     valueDiamonds: 2,
     minDepth: 60,
     weight: (depth) => (depth < 60 ? 0 : Math.min(20, (depth - 60) * 0.4)),
+  },
+  tnt: {
+    id: 'tnt',
+    name: 'TNT',
+    baseHardness: 1,
+    color: 0xb91c1c,
+    borderColor: 0x7f1d1d,
+    particleColor: 0xf97316,
+    valueGold: 0,
+    valueDiamonds: 0,
+    minDepth: 8,
+    weight: (depth) => (depth < 8 ? 0 : 2.2),
+  },
+  treasure: {
+    id: 'treasure',
+    name: 'Treasure Chest',
+    baseHardness: 4,
+    color: 0x78350f,
+    borderColor: 0x451a03,
+    particleColor: 0xfbbf24,
+    valueGold: 60,
+    valueDiamonds: 1,
+    minDepth: 15,
+    weight: (depth) => (depth < 15 ? 0 : 1.4),
   },
   bedrock: {
     id: 'bedrock',

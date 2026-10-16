@@ -2,6 +2,13 @@ import { BlockType } from './blocks';
 
 export type EnemyType = 'bat' | 'goblin' | 'slime' | 'rock_golem' | 'crystal_lurker' | 'void_wraith';
 
+// ── Elite (mini-boss) scaling — applied on top of a base enemy type ─────────
+export const ELITE_HP_MULTIPLIER = 8;
+export const ELITE_DAMAGE_BONUS = 2;
+export const ELITE_SPEED_MULTIPLIER = 0.85;
+export const ELITE_GOLD_MULTIPLIER = 3;
+export const ELITE_DIAMOND_BONUS = 2;
+
 export interface EnemyConfig {
   id: EnemyType;
   name: string;
@@ -165,6 +172,8 @@ export function shouldEnemySpawn(blockType: BlockType, depth: number): boolean {
     gold: 0.08,
     diamond: 0.15,
     obsidian: 0.2,
+    tnt: 0.1,
+    treasure: 0.25,
     bedrock: 0,
   };
 

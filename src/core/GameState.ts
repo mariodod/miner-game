@@ -25,6 +25,8 @@ export const PLAYER_MAX_HP = 10;
 
 /** Depth reward cadence: a chest is earned every 25 m of a run. */
 export const MILESTONE_STEP_M = 25;
+/** Mini-boss cadence: an elite guard blocks the way every 100 m. */
+export const BOSS_STEP_M = 100;
 /** A "new record" needs at least this much prior history to be worth cheering. */
 const RECORD_MIN_PRIOR_DEPTH = 10;
 
@@ -42,6 +44,12 @@ export interface DepthMilestoneInfo {
 export interface NewRecordInfo {
   depth: number;
   previous: number;
+}
+
+/** Payload emitted when a run crosses a 100 m threshold (elite guard). */
+export interface BossSpawnInfo {
+  depth: number;
+  tier: number;
 }
 
 export class GameStateManager {
@@ -62,6 +70,7 @@ export class GameStateManager {
   private lastMilestone: number = 0;
   private recordCelebratedThisRun: boolean = false;
   private lastBiomeId: string = 'topsoil';
+  private lastBossMilestone: number = 0;
 
   private listeners: Map<string, Set<(val: any) => void>> = new Map();
 
@@ -268,6 +277,7 @@ export class GameStateManager {
       this.checkMilestones();
       this.checkRecord(previousHigh);
       this.checkBiome();
+      this.checkBossMilestone();
     }
   }
 
@@ -309,6 +319,14 @@ export class GameStateManager {
     if (biome.id === this.lastBiomeId) return;
     this.lastBiomeId = biome.id;
     this.emit('biomeChanged', biome);
+  }
+
+  /** Emits once per 100 m threshold crossed (an elite guard is dispatched). */
+  private checkBossMilestone(): void {
+    const tier = Math.floor(this.currentDepth / BOSS_STEP_M);
+    if (tier <= this.lastBossMilestone) return;
+    this.lastBossMilestone = tier;
+    this.emit('bossSpawn', { depth: tier * BOSS_STEP_M, tier } satisfies BossSpawnInfo);
   }
 
   public recordBlockBroken(): void {
@@ -474,6 +492,7 @@ export class GameStateManager {
     this.lastMilestone = 0;
     this.recordCelebratedThisRun = false;
     this.lastBiomeId = 'topsoil';
+    this.lastBossMilestone = 0;
     this.emit('depthChanged', 0);
     this.emit('playerHpChanged', this.playerHp);
   }

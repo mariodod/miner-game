@@ -165,7 +165,11 @@ export class ShopScene extends Phaser.Scene {
         this.persistedScrollOffset = 0;
         this.scene.restart({ returnTo: this.returnTo });
       };
-      bg.setInteractive(new Phaser.Geom.Rectangle(x - w / 2, y - h / 2, w, h), Phaser.Geom.Rectangle.Contains);
+      bg.setInteractive({
+        hitArea: new Phaser.Geom.Rectangle(x - w / 2, y - h / 2, w, h),
+        hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+        useHandCursor: true,
+      });
       bg.on('pointerdown', switchTab);
       text.setInteractive({ useHandCursor: true });
       text.on('pointerdown', switchTab);

@@ -61,6 +61,8 @@ export class SettingsModal {
           fontSize: '19px',
           fontStyle: 'bold',
           color: '#f8fafc',
+          // Emoji headroom — color glyphs paint above the measured ascent
+          padding: { top: 5, bottom: 1, left: 2, right: 2 },
         })
         .setOrigin(0.5),
       2000
@@ -164,10 +166,11 @@ export class SettingsModal {
     pill.setScrollFactor(0);
     pill.setAlpha(0);
     pill.setDepth(2001);
-    pill.setInteractive(
-      new Phaser.Geom.Rectangle(pillX, pillY, pillW, pillH),
-      Phaser.Geom.Rectangle.Contains
-    );
+    pill.setInteractive({
+      hitArea: new Phaser.Geom.Rectangle(pillX, pillY, pillW, pillH),
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    });
     this.drawPill(pill, pillX, pillY, pillW, pillH, isOn());
     this.objects.push(pill);
 
@@ -216,10 +219,11 @@ export class SettingsModal {
     btn.setScrollFactor(0);
     btn.setAlpha(0);
     btn.setDepth(2001);
-    btn.setInteractive(
-      new Phaser.Geom.Rectangle(btnX, btnY, btnW, btnH),
-      Phaser.Geom.Rectangle.Contains
-    );
+    btn.setInteractive({
+      hitArea: new Phaser.Geom.Rectangle(btnX, btnY, btnW, btnH),
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    });
     this.drawReplayButton(btn, btnX, btnY, btnW, btnH);
     this.objects.push(btn);
 

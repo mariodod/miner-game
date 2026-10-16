@@ -337,10 +337,11 @@ export class GameScene extends Phaser.Scene {
       const reviveBg = add(this.add.graphics(), 1502);
       reviveBg.fillStyle(0x16a34a, 1);
       reviveBg.fillRoundedRect(panelX + 20, buttonY, panelW - 40, 46, 12);
-      reviveBg.setInteractive(
-        new Phaser.Geom.Rectangle(panelX + 20, buttonY, panelW - 40, 46),
-        Phaser.Geom.Rectangle.Contains
-      );
+      reviveBg.setInteractive({
+        hitArea: new Phaser.Geom.Rectangle(panelX + 20, buttonY, panelW - 40, 46),
+        hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+        useHandCursor: true,
+      });
       reviveBg.on('pointerdown', () => {
         if (GameState.soundEnabled) Sound.play('ui_click');
         Ads.showRewardedAd(
@@ -389,10 +390,11 @@ export class GameScene extends Phaser.Scene {
     const endBg = add(this.add.graphics(), 1502);
     endBg.fillStyle(0x334155, 1);
     endBg.fillRoundedRect(panelX + 20, buttonY, panelW - 40, 38, 10);
-    endBg.setInteractive(
-      new Phaser.Geom.Rectangle(panelX + 20, buttonY, panelW - 40, 38),
-      Phaser.Geom.Rectangle.Contains
-    );
+    endBg.setInteractive({
+      hitArea: new Phaser.Geom.Rectangle(panelX + 20, buttonY, panelW - 40, 38),
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    });
     endBg.on('pointerdown', () => {
       if (GameState.soundEnabled) Sound.play('ui_click');
       this.endRun();

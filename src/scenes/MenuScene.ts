@@ -82,14 +82,18 @@ export class MenuScene extends Phaser.Scene {
     }
 
     // ── Play Button ──
+    // Drawn centered on the graphics origin so hover scaling grows in place
+    // (scaling a graphics whose origin sits at 0,0 shifts it instead).
     const btnY = height * 0.60;
     const btnBg = this.add.graphics();
     btnBg.fillStyle(0xf59e0b, 1);
-    btnBg.fillRoundedRect(width / 2 - 80, btnY - 22, 160, 44, 22);
-    btnBg.setInteractive(
-      new Phaser.Geom.Rectangle(width / 2 - 80, btnY - 22, 160, 44),
-      Phaser.Geom.Rectangle.Contains
-    );
+    btnBg.fillRoundedRect(-80, -22, 160, 44, 22);
+    btnBg.setPosition(width / 2, btnY);
+    btnBg.setInteractive({
+      hitArea: new Phaser.Geom.Rectangle(-80, -22, 160, 44),
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    });
 
     const btnText = this.add
       .text(width / 2, btnY, 'PLAY', {
@@ -121,23 +125,32 @@ export class MenuScene extends Phaser.Scene {
     const shopBg = this.add.graphics();
     shopBg.fillStyle(0x1e293b, 1);
     shopBg.lineStyle(2, 0x64748b, 1);
-    shopBg.fillRoundedRect(width / 2 - 70, shopBtnY - 18, 140, 36, 18);
-    shopBg.strokeRoundedRect(width / 2 - 70, shopBtnY - 18, 140, 36, 18);
-    shopBg.setInteractive(
-      new Phaser.Geom.Rectangle(width / 2 - 70, shopBtnY - 18, 140, 36),
-      Phaser.Geom.Rectangle.Contains
-    );
+    shopBg.fillRoundedRect(-70, -18, 140, 36, 18);
+    shopBg.strokeRoundedRect(-70, -18, 140, 36, 18);
+    shopBg.setPosition(width / 2, shopBtnY);
+    shopBg.setInteractive({
+      hitArea: new Phaser.Geom.Rectangle(-70, -18, 140, 36),
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    });
     shopBg.on('pointerdown', () => {
       if (GameState.soundEnabled) Sound.play('ui_click');
       this.scene.start('ShopScene');
     });
 
-    this.add
+    const shopText = this.add
       .text(width / 2, shopBtnY, '🛒 SHOP', {
         fontSize: '16px',
         color: '#cbd5e1',
       })
       .setOrigin(0.5);
+
+    shopBg.on('pointerover', () => {
+      this.tweens.add({ targets: [shopBg, shopText], scale: 1.04, duration: 80 });
+    });
+    shopBg.on('pointerout', () => {
+      this.tweens.add({ targets: [shopBg, shopText], scale: 1.0, duration: 80 });
+    });
 
     // Currency row
     this.add
@@ -160,7 +173,20 @@ export class MenuScene extends Phaser.Scene {
         this.settingsModal = null;
       });
     });
-    this.add.text(width - 28, 28, '⚙️', { fontSize: '18px' }).setOrigin(0.5);
+    // Padding keeps the emoji glyph inside the text canvas — color emoji
+    // paint slightly above the measured ascent and get their top clipped.
+    const gearIcon = this.add
+      .text(width - 28, 28, '⚙️', {
+        fontSize: '18px',
+        padding: { top: 6, bottom: 2, left: 2, right: 2 },
+      })
+      .setOrigin(0.5);
+    gearBg.on('pointerover', () => {
+      this.tweens.add({ targets: [gearBg, gearIcon], scale: 1.1, duration: 80 });
+    });
+    gearBg.on('pointerout', () => {
+      this.tweens.add({ targets: [gearBg, gearIcon], scale: 1.0, duration: 80 });
+    });
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.settingsModal?.destroy();

@@ -130,7 +130,11 @@ export class PauseScene extends Phaser.Scene {
     bg.setScrollFactor(0);
     bg.setAlpha(0);
     bg.setDepth(2);
-    bg.setInteractive(new Phaser.Geom.Rectangle(x, y, w, h), Phaser.Geom.Rectangle.Contains);
+    bg.setInteractive({
+      hitArea: new Phaser.Geom.Rectangle(x, y, w, h),
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    });
     bg.on('pointerdown', () => {
       if (GameState.soundEnabled) Sound.play('ui_click');
       onClick();

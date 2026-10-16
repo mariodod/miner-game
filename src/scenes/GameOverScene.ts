@@ -122,10 +122,11 @@ export class GameOverScene extends Phaser.Scene {
       const adBg = this.add.graphics();
       adBg.fillStyle(0xd97706, 1);
       adBg.fillRoundedRect(cardX + 16, adBtnY, cardW - 32, 44, 12);
-      adBg.setInteractive(
-        new Phaser.Geom.Rectangle(cardX + 16, adBtnY, cardW - 32, 44),
-        Phaser.Geom.Rectangle.Contains
-      );
+      adBg.setInteractive({
+        hitArea: new Phaser.Geom.Rectangle(cardX + 16, adBtnY, cardW - 32, 44),
+        hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+        useHandCursor: true,
+      });
 
       const adText = this.add
         .text(width / 2, adBtnY + 22, '📺 Watch Ad → 2× Gold', {
@@ -160,10 +161,11 @@ export class GameOverScene extends Phaser.Scene {
     const playBg = this.add.graphics();
     playBg.fillStyle(0x2563eb, 1);
     playBg.fillRoundedRect(cardX + 16, playBtnY, cardW - 32, 40, 12);
-    playBg.setInteractive(
-      new Phaser.Geom.Rectangle(cardX + 16, playBtnY, cardW - 32, 40),
-      Phaser.Geom.Rectangle.Contains
-    );
+    playBg.setInteractive({
+      hitArea: new Phaser.Geom.Rectangle(cardX + 16, playBtnY, cardW - 32, 40),
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    });
     playBg.on('pointerdown', () => {
       if (GameState.soundEnabled) Sound.play('ui_click');
       this.scene.start('GameScene');
@@ -182,10 +184,11 @@ export class GameOverScene extends Phaser.Scene {
     const menuBg = this.add.graphics();
     menuBg.fillStyle(0x334155, 0.8);
     menuBg.fillRoundedRect(cardX + 16, menuBtnY, cardW - 32, 28, 8);
-    menuBg.setInteractive(
-      new Phaser.Geom.Rectangle(cardX + 16, menuBtnY, cardW - 32, 28),
-      Phaser.Geom.Rectangle.Contains
-    );
+    menuBg.setInteractive({
+      hitArea: new Phaser.Geom.Rectangle(cardX + 16, menuBtnY, cardW - 32, 28),
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    });
     menuBg.on('pointerdown', () => {
       if (GameState.soundEnabled) Sound.play('ui_click');
       this.scene.start('MenuScene');

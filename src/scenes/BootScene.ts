@@ -218,18 +218,19 @@ export class BootScene extends Phaser.Scene {
       const g = this.make.graphics({ x: 0, y: 0 });
       // Handle (Wood stick diagonally)
       g.lineStyle(3, 0x78350f, 1);
-      g.lineBetween(4, 28, 22, 10);
+      g.lineBetween(5.5, 28, 19.5, 15);
 
-      // Pickaxe Head
+      // Pickaxe Head — arc radius/stroke chosen so the head stays fully
+      // inside the 32x32 canvas (it used to poke above the top edge).
       g.lineStyle(5, config.color, 1);
       g.beginPath();
-      g.arc(24, 8, 14, Phaser.Math.DegToRad(170), Phaser.Math.DegToRad(290));
+      g.arc(20, 13.5, 10.5, Phaser.Math.DegToRad(170), Phaser.Math.DegToRad(290));
       g.strokePath();
 
       // Sharp tips
       g.fillStyle(config.color, 1);
-      g.fillCircle(12, 4, 3);
-      g.fillCircle(28, 20, 3);
+      g.fillCircle(9.7, 15.3, 2.5);
+      g.fillCircle(23.6, 3.6, 2.5);
 
       g.generateTexture(`pickaxe_${id}`, 32, 32);
       g.destroy();

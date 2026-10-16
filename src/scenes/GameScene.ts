@@ -461,6 +461,31 @@ export class GameScene extends Phaser.Scene {
   private generateChunk(startRow: number, endRow: number): void {
     const efficiency = this.currentEfficiency();
 
+    // Natural cave pockets: a small share of cells is generated as open air
+    // (slightly more the deeper you go). Some pockets grow one extra cell so
+    // they read as natural gaps rather than a checkerboard.
+    const caves = new Set<string>();
+    for (let row = startRow; row < endRow; row++) {
+      const caveChance = Math.min(0.12, 0.05 + row * 0.001);
+      for (let col = 0; col < COLS; col++) {
+        if (Math.random() < caveChance) {
+          caves.add(this.gridKey(col, row));
+          if (Math.random() < 0.35) {
+            const dir = Phaser.Utils.Array.GetRandom([
+              { dc: -1, dr: 0 },
+              { dc: 1, dr: 0 },
+              { dc: 0, dr: 1 },
+            ]);
+            const nc = col + dir.dc;
+            const nr = row + dir.dr;
+            if (nc >= 0 && nc < COLS && nr >= startRow && nr < endRow) {
+              caves.add(this.gridKey(nc, nr));
+            }
+          }
+        }
+      }
+    }
+
     for (let row = startRow; row < endRow; row++) {
       for (let col = 0; col < COLS; col++) {
         // The miner's starting cell stays open — the run begins in the
@@ -469,6 +494,7 @@ export class GameScene extends Phaser.Scene {
 
         const key = this.gridKey(col, row);
         if (this.blocks.has(key)) continue;
+        if (caves.has(key)) continue;
 
         const x = col * BLOCK_SIZE + BLOCK_SIZE / 2;
         const y = row * BLOCK_SIZE + BLOCK_SIZE / 2;

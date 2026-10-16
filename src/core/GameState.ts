@@ -12,7 +12,9 @@ export interface GameSaveData {
   unlockedSkins: string[];
   upgrades: Record<UpgradeId, number>;
   soundEnabled: boolean;
+  musicEnabled: boolean;
   hapticsEnabled: boolean;
+  tutorialDone: boolean;
 }
 
 const STORAGE_KEY = 'pocket_miner_save_v1';
@@ -59,7 +61,9 @@ export class GameStateManager {
       unlockedSkins: ['classic'],
       upgrades: { power: 0, speed: 0, fortune: 0 },
       soundEnabled: true,
+      musicEnabled: true,
       hapticsEnabled: true,
+      tutorialDone: false,
     };
   }
 
@@ -175,8 +179,16 @@ export class GameStateManager {
     return this.data.soundEnabled;
   }
 
+  public get musicEnabled(): boolean {
+    return this.data.musicEnabled;
+  }
+
   public get hapticsEnabled(): boolean {
     return this.data.hapticsEnabled;
+  }
+
+  public get tutorialDone(): boolean {
+    return this.data.tutorialDone;
   }
 
   // --- Actions ---
@@ -319,11 +331,33 @@ export class GameStateManager {
     return this.data.soundEnabled;
   }
 
+  public toggleMusic(): boolean {
+    this.data.musicEnabled = !this.data.musicEnabled;
+    this.save();
+    this.emit('musicToggled', this.data.musicEnabled);
+    return this.data.musicEnabled;
+  }
+
   public toggleHaptics(): boolean {
     this.data.hapticsEnabled = !this.data.hapticsEnabled;
     this.save();
     this.emit('hapticsToggled', this.data.hapticsEnabled);
     return this.data.hapticsEnabled;
+  }
+
+  /** First-run tutorial is considered complete once every hint was shown. */
+  public markTutorialDone(): void {
+    if (this.data.tutorialDone) return;
+    this.data.tutorialDone = true;
+    this.save();
+    this.emit('tutorialDoneChanged', true);
+  }
+
+  /** Queues the tutorial to replay on the next run (settings > Replay). */
+  public resetTutorial(): void {
+    this.data.tutorialDone = false;
+    this.save();
+    this.emit('tutorialDoneChanged', false);
   }
 
   public triggerHaptic(durationMs: number = 25): void {

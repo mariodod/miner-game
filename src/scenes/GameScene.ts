@@ -35,6 +35,13 @@ export class GameScene extends Phaser.Scene {
   // Combat
   private isAttacking: boolean = false;
 
+  // Pause overlay (PauseScene handles resume / settings / quit)
+  private isPauseOpen: boolean = false;
+
+  // First-run tutorial hints (only while !GameState.tutorialDone)
+  private tutorialStep: number = 0; // 1 = awaiting first mine, 2 = awaiting first enemy
+  private tutorialHint: Phaser.GameObjects.Text | null = null;
+
   // Player survival & revive (second-chance ad) flow.
   // Overlay pieces are top-level objects: Phaser hit-tests Container children
   // in registration order and ignores the container's scroll factor, which
@@ -67,6 +74,9 @@ export class GameScene extends Phaser.Scene {
     this.reviveUsedThisRun = false;
     this.invulnUntil = 0;
     this.collapseObjects = [];
+    this.isPauseOpen = false;
+    this.tutorialStep = 0;
+    this.tutorialHint = null;
 
     GameState.startNewRun();
 
@@ -115,12 +125,28 @@ export class GameScene extends Phaser.Scene {
 
     // Keyboard shortcut (desktop fallback)
     this.input.keyboard?.on('keydown', (event: KeyboardEvent) => {
-      if (event.code === 'Escape') this.endRun();
+      if (event.code === 'Escape') this.openPauseMenu();
     });
 
-    // "Give Up" button — fixed to viewport, below the HUD banner
+    // "Pause" & "Give Up" buttons — fixed to viewport, below the HUD banner
     this.add
-      .text(width - 8, 66, '🏳 Give Up', {
+      .text(width - 8, 64, '⏸ Pause', {
+        fontSize: '12px',
+        color: '#cbd5e1',
+        backgroundColor: '#0f172a',
+        padding: { x: 6, y: 4 },
+      })
+      .setOrigin(1, 0)
+      .setDepth(1000)
+      .setScrollFactor(0)
+      .setInteractive({ useHandCursor: true })
+      .on('pointerdown', () => {
+        if (GameState.soundEnabled) Sound.play('ui_click');
+        this.openPauseMenu();
+      });
+
+    this.add
+      .text(width - 8, 92, '🏳 Give Up', {
         fontSize: '12px',
         color: '#f87171',
         backgroundColor: '#0f172a',
@@ -130,11 +156,15 @@ export class GameScene extends Phaser.Scene {
       .setDepth(1000)
       .setScrollFactor(0)
       .setInteractive({ useHandCursor: true })
-      .on('pointerdown', () => this.endRun());
+      .on('pointerdown', () => {
+        if (GameState.soundEnabled) Sound.play('ui_click');
+        this.endRun();
+      });
 
     // When returning from the shop mid-run, refresh block HP for the
     // (possibly upgraded) pickaxe efficiency.
     this.events.on(Phaser.Scenes.Events.RESUME, () => {
+      this.isPauseOpen = false;
       const efficiency = this.currentEfficiency();
       for (const block of this.blocks.values()) {
         block.updatePickaxeEfficiency(efficiency);
@@ -145,6 +175,9 @@ export class GameScene extends Phaser.Scene {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       this.flushCollectibles();
     });
+
+    // First-run tutorial hints (skipped once completed on a previous run)
+    this.initTutorial();
   }
 
   /** Pickaxe efficiency including incremental Power upgrades. */
@@ -157,6 +190,63 @@ export class GameScene extends Phaser.Scene {
     this.flushCollectibles();
     this.scene.stop('HUDScene');
     this.scene.start('GameOverScene');
+  }
+
+  /** Ends the run from outside the scene (e.g. the pause menu quit button). */
+  public quitRun(): void {
+    this.endRun();
+  }
+
+  /** Opens the pause overlay (no-op while a death/revive overlay is up). */
+  private openPauseMenu(): void {
+    if (this.isCollapsed || this.isPauseOpen) return;
+    this.isPauseOpen = true;
+    this.scene.launch('PauseScene');
+    this.scene.pause();
+  }
+
+  // ─── First-Run Tutorial Hints ────────────────────────────────────────────
+
+  private initTutorial(): void {
+    if (GameState.tutorialDone) return;
+    this.tutorialStep = 1;
+    this.time.delayedCall(600, () => {
+      if (this.tutorialStep === 1) {
+        this.showTutorialHint('👆 Tap a block next to your miner to mine it!');
+      }
+    });
+  }
+
+  /** Bottom-screen hint bubble; auto-hides after a few seconds. */
+  private showTutorialHint(text: string): void {
+    this.tutorialHint?.destroy();
+
+    const hint = this.add
+      .text(this.scale.width / 2, this.scale.height - 84, text, {
+        fontSize: '13px',
+        color: '#f8fafc',
+        backgroundColor: '#0f172ae6',
+        padding: { x: 14, y: 8 },
+        wordWrap: { width: 300 },
+        align: 'center',
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setDepth(1200)
+      .setAlpha(0);
+    this.tutorialHint = hint;
+
+    this.tweens.add({ targets: hint, alpha: 1, duration: 250, ease: 'Power2' });
+    this.time.delayedCall(6000, () => {
+      if (this.tutorialHint !== hint) return;
+      this.tweens.add({
+        targets: hint,
+        alpha: 0,
+        duration: 300,
+        onComplete: () => hint.destroy(),
+      });
+      this.tutorialHint = null;
+    });
   }
 
   // ─── Player Survival & Second Chance ─────────────────────────────────────
@@ -612,6 +702,13 @@ export class GameScene extends Phaser.Scene {
     // Chance to spawn enemy when breaking block
     this.trySpawnEnemy(col, row, block.blockType);
 
+    // Tutorial: first broken block → nudge the player deeper
+    // (checked after trySpawnEnemy so the enemy hint fires on the next spawn)
+    if (this.tutorialStep === 1) {
+      this.tutorialStep = 2;
+      this.showTutorialHint('💰 Blocks can drop gold and gems — dig deeper for rarer ores!');
+    }
+
     // Fortune upgrade multiplies ore gold
     const boostedGold = gold > 0 ? Math.round(gold * GameState.goldMultiplier) : 0;
 
@@ -676,6 +773,13 @@ export class GameScene extends Phaser.Scene {
     this.particles.setPosition(x, y);
     this.particles.setParticleTint(ENEMIES_CONFIG[enemyType].accentColor);
     this.particles.explode(12);
+
+    // Tutorial: first enemy spawn → combat hint, and mark the tutorial done.
+    if (this.tutorialStep === 2) {
+      this.tutorialStep = 3;
+      this.showTutorialHint('⚠️ A cave monster appeared — tap it to attack!');
+      GameState.markTutorialDone();
+    }
   }
 
   private tryAttackEnemy(worldX: number, worldY: number): boolean {

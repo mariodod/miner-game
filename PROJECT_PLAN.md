@@ -82,6 +82,7 @@ miner-game/
 │   │   └── economy.ts         # Shop prices, upgrades
 │   ├── core/
 │   │   ├── GameState.ts       # Central state (gold, diamonds, inventory, save/load)
+│   │   ├── SoundManager.ts    # Procedural SFX + chiptune music (Web Audio)
 │   │   └── AdManager.ts       # Rewarded ad interface (mock + Capacitor AdMob)
 │   ├── entities/
 │   │   ├── Player.ts          # Miner sprite, animations, movement
@@ -92,9 +93,11 @@ miner-game/
 │   │   ├── MenuScene.ts       # Title screen, play button
 │   │   ├── GameScene.ts       # Primary mining loop, camera, touch controls
 │   │   ├── ShopScene.ts       # Pickaxe & skin store
+│   │   ├── PauseScene.ts      # Pause overlay (resume / settings / quit run)
 │   │   └── GameOverScene.ts   # Run summary, voluntary ad double reward
 │   ├── ui/
 │   │   ├── HUD.ts             # Depth counter, gold/diamond counter
+│   │   ├── SettingsModal.ts   # Sound / music / vibration settings
 │   │   └── AdRewardModal.ts   # Rewarded ad prompt UI
 │   ├── index.html
 │   └── main.ts                # Phaser game initialization
@@ -125,3 +128,8 @@ miner-game/
 - **Milestone 5 — Voluntary Rewarded Ads & Native Packaging**:
   - Integrate AdManager (simulated in browser, native AdMob in mobile).
   - Capacitor setup for Android APK build test.
+- **Milestone 6 — Settings, Music, Pause & Tutorial (polish)**:
+  - Settings modal (sound / music / vibration toggles + tutorial replay) reachable from the main menu and the pause overlay.
+  - Procedural chiptune background music via Web Audio (no audio assets), with a persisted on/off flag.
+  - Pause overlay that freezes the run (resume / settings / quit run).
+  - First-run tutorial hints (mine → dig deeper → combat) shown only once.

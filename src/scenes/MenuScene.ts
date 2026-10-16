@@ -1,8 +1,11 @@
 import Phaser from 'phaser';
 import { GameState } from '../core/GameState';
 import { Sound } from '../core/SoundManager';
+import { SettingsModal } from '../ui/SettingsModal';
 
 export class MenuScene extends Phaser.Scene {
+  private settingsModal: SettingsModal | null = null;
+
   constructor() {
     super('MenuScene');
   }
@@ -10,7 +13,11 @@ export class MenuScene extends Phaser.Scene {
   create() {
     const { width, height } = this.scale;
 
+    this.settingsModal = null;
     GameState.startNewRun();
+
+    // Keep the procedural music loop in sync with the saved preference
+    Sound.syncMusic(GameState.musicEnabled);
 
     // ── Background gradient via graphics ──
     const bg = this.add.graphics();
@@ -142,9 +149,27 @@ export class MenuScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
+    // ── Settings Button (top-right) ──
+    const gearBg = this.add.circle(width - 28, 28, 18, 0x1e293b, 0.92);
+    gearBg.setStrokeStyle(1.5, 0x64748b);
+    gearBg.setInteractive({ useHandCursor: true });
+    gearBg.on('pointerdown', () => {
+      if (GameState.soundEnabled) Sound.play('ui_click');
+      if (this.settingsModal) return;
+      this.settingsModal = new SettingsModal(this, () => {
+        this.settingsModal = null;
+      });
+    });
+    this.add.text(width - 28, 28, '⚙️', { fontSize: '18px' }).setOrigin(0.5);
+
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.settingsModal?.destroy();
+      this.settingsModal = null;
+    });
+
     // Version tag
     this.add
-      .text(width - 8, height - 8, 'v0.1', {
+      .text(width - 8, height - 8, 'v0.2', {
         fontSize: '10px',
         color: '#475569',
       })

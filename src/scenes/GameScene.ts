@@ -558,9 +558,8 @@ export class GameScene extends Phaser.Scene {
     const adx = Math.abs(dx);
 
     const canMine =
-      (dx === 0 && (dy === 0 || dy === 1)) ||   // same col: own cell or below
-      (dy === 0 && adx === 1) ||                 // same row: left/right
-      (adx === 1 && dy === 1);                   // diagonally below
+      (dx === 0 && (dy === 0 || dy === 1)) ||   // own cell or directly below
+      (dy === 0 && adx === 1);                   // directly left/right
     const canWalk = adx + Math.abs(dy) === 1;    // any directly adjacent cell
 
     if (!canMine && !canWalk) return;
@@ -568,22 +567,10 @@ export class GameScene extends Phaser.Scene {
     const block = this.blocks.get(this.gridKey(col, row));
 
     if (block && !block.isBroken) {
-      // ── Mine the tapped block (walls can't be mined from bad angles) ──
+      // ── Mine the tapped block (only orthogonal neighbours are minable) ──
       if (!canMine) return;
       this.isMining = true;
-
-      if (adx === 1 && dy === 1 && this.isCellFree(col, this.player.gridY)) {
-        // Diagonal below with a dug path: step sideways first, then swing.
-        const newX = col * BLOCK_SIZE + BLOCK_SIZE / 2;
-        const newY = this.player.gridY * BLOCK_SIZE + BLOCK_SIZE / 2 + GRID_STAND_OFFSET;
-        this.player.moveToGrid(newX, newY, col, this.player.gridY, () => {
-          this.doMineHit(block, col, row);
-        });
-      } else {
-        // Straight below / side / own cell — swing from where we stand.
-        // (No sidestep into solid rock: the miner must dig the path first.)
-        this.doMineHit(block, col, row);
-      }
+      this.doMineHit(block, col, row);
       return;
     }
 

@@ -144,6 +144,60 @@ export class GameStateManager {
     }
   }
 
+  // --- Save Transfer (export / import codes) ---
+
+  /** Prefix keeps codes recognizable and versioned for the future. */
+  private static readonly SAVE_CODE_PREFIX = 'PM1.';
+
+  /** Full save as a copy-pasteable code: `PM1.` + base64(JSON). */
+  public exportSaveCode(): string {
+    return GameStateManager.SAVE_CODE_PREFIX + btoa(JSON.stringify(this.data));
+  }
+
+  /**
+   * Validates and applies an imported save code.
+   * @returns true when the code was valid and the save was replaced.
+   */
+  public importSaveCode(code: string): boolean {
+    const trimmed = code.trim();
+    if (!trimmed.startsWith(GameStateManager.SAVE_CODE_PREFIX)) return false;
+
+    let parsed: Partial<GameSaveData>;
+    try {
+      parsed = JSON.parse(atob(trimmed.slice(GameStateManager.SAVE_CODE_PREFIX.length)));
+    } catch {
+      return false;
+    }
+    if (!this.isValidSaveData(parsed)) return false;
+
+    const defaults = this.getDefaultData();
+    this.data = {
+      ...defaults,
+      ...parsed,
+      upgrades: { ...defaults.upgrades, ...(parsed.upgrades ?? {}) },
+    };
+    this.save();
+    return true;
+  }
+
+  /** Shape-checks pasted (possibly hand-edited) payloads before applying. */
+  private isValidSaveData(value: unknown): value is Partial<GameSaveData> {
+    if (!value || typeof value !== 'object') return false;
+    const d = value as Record<string, unknown>;
+    const isCount = (x: unknown) => typeof x === 'number' && Number.isFinite(x) && x >= 0;
+    return (
+      isCount(d.gold) &&
+      isCount(d.diamonds) &&
+      isCount(d.highScoreDepth) &&
+      typeof d.equippedPickaxe === 'string' &&
+      typeof d.equippedSkin === 'string' &&
+      Array.isArray(d.unlockedPickaxes) &&
+      Array.isArray(d.unlockedSkins) &&
+      !!d.upgrades &&
+      typeof d.upgrades === 'object'
+    );
+  }
+
   // --- Event Handling ---
   public on(event: string, callback: (val: any) => void): () => void {
     if (!this.listeners.has(event)) {

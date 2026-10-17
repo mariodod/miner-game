@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { GameState } from '../core/GameState';
 import { Sound } from '../core/SoundManager';
+import type { SaveTransferMode } from './SaveTransferOverlay';
 
 /**
  * Settings modal — sound / music / vibration / screen-shake toggles, a
@@ -16,17 +17,23 @@ export class SettingsModal {
   private scene: Phaser.Scene;
   private onClose?: () => void;
   private onReset?: () => void;
+  private onSaveTransfer?: (mode: SaveTransferMode) => void;
   private objects: Array<Phaser.GameObjects.Graphics | Phaser.GameObjects.Text> = [];
   private destroyed = false;
 
   constructor(
     scene: Phaser.Scene,
     onClose?: () => void,
-    options?: { showReset?: boolean; onReset?: () => void }
+    options?: {
+      showReset?: boolean;
+      onReset?: () => void;
+      onSaveTransfer?: (mode: SaveTransferMode) => void;
+    }
   ) {
     this.scene = scene;
     this.onClose = onClose;
     this.onReset = options?.onReset;
+    this.onSaveTransfer = options?.onSaveTransfer;
 
     const { width, height } = scene.scale;
 
@@ -54,7 +61,7 @@ export class SettingsModal {
     const panelW = Math.min(width - 40, 320);
     const panelX = (width - panelW) / 2;
     const rowHeight = 52;
-    const rowCount = options?.showReset ? 6 : 5;
+    const rowCount = options?.showReset ? 7 : 6;
     const panelH = 66 + rowCount * rowHeight + 42;
     const panelY = (height - panelH) / 2;
 
@@ -149,8 +156,10 @@ export class SettingsModal {
 
     this.addTutorialRow(panelX, panelW, rowY(4));
 
+    this.addSaveTransferRow(panelX, panelW, rowY(5));
+
     if (options?.showReset) {
-      this.addResetRow(panelX, panelW, rowY(5));
+      this.addResetRow(panelX, panelW, rowY(6));
     }
 
     // Fade in
@@ -345,6 +354,96 @@ export class SettingsModal {
       this.destroy();
       if (this.onClose) this.onClose();
       if (this.onReset) this.onReset();
+    });
+  }
+
+  /** Export/import save codes — backups and moving progress between devices. */
+  private addSaveTransferRow(panelX: number, panelW: number, y: number): void {
+    const scene = this.scene;
+
+    this.objects.push(
+      scene.add
+        .text(panelX + 22, y, '💾 Save Transfer', { fontSize: '14px', color: '#e2e8f0' })
+        .setOrigin(0, 0.5)
+        .setScrollFactor(0)
+        .setAlpha(0)
+        .setDepth(2000)
+    );
+
+    const btnW = 74;
+    const btnH = 32;
+    const importX = panelX + panelW - 22 - btnW;
+    const exportX = importX - btnW - 8;
+
+    this.addTransferButton(
+      exportX,
+      y - btnH / 2,
+      btnW,
+      btnH,
+      'EXPORT',
+      '#fde68a',
+      0x78350f,
+      0xfbbf24,
+      () => this.onSaveTransfer?.('export')
+    );
+    this.addTransferButton(
+      importX,
+      y - btnH / 2,
+      btnW,
+      btnH,
+      'IMPORT',
+      '#bbf7d0',
+      0x14532d,
+      0x4ade80,
+      () => this.onSaveTransfer?.('import')
+    );
+  }
+
+  private addTransferButton(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    label: string,
+    textColor: string,
+    fill: number,
+    border: number,
+    onClick: () => void
+  ): void {
+    const scene = this.scene;
+
+    const btn = scene.add.graphics();
+    btn.setScrollFactor(0);
+    btn.setAlpha(0);
+    btn.setDepth(2001);
+    btn.setInteractive({
+      hitArea: new Phaser.Geom.Rectangle(x, y, w, h),
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    });
+    btn.fillStyle(fill, 1);
+    btn.fillRoundedRect(x, y, w, h, 10);
+    btn.lineStyle(1.5, border, 0.8);
+    btn.strokeRoundedRect(x, y, w, h, 10);
+    this.objects.push(btn);
+
+    const btnText = scene.add
+      .text(x + w / 2, y + h / 2, label, {
+        fontSize: '11px',
+        fontStyle: 'bold',
+        color: textColor,
+      })
+      .setOrigin(0.5)
+      .setScrollFactor(0)
+      .setAlpha(0)
+      .setDepth(2001);
+    this.objects.push(btnText);
+
+    btn.on('pointerdown', () => {
+      if (this.destroyed) return;
+      GameState.haptic('tap');
+      if (GameState.soundEnabled) Sound.play('ui_click');
+      onClick();
     });
   }
 

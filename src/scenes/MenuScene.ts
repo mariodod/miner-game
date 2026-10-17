@@ -4,6 +4,7 @@ import { Sound } from '../core/SoundManager';
 import { SKINS_CONFIG } from '../config/economy';
 import { ensureMinerSkinTexture } from '../entities/Player';
 import { SettingsModal } from '../ui/SettingsModal';
+import { SaveTransferOverlay, type SaveTransferMode } from '../ui/SaveTransferOverlay';
 
 export class MenuScene extends Phaser.Scene {
   private settingsModal: SettingsModal | null = null;
@@ -231,7 +232,11 @@ export class MenuScene extends Phaser.Scene {
         () => {
           this.settingsModal = null;
         },
-        { showReset: true, onReset: () => this.scene.restart() }
+        {
+          showReset: true,
+          onReset: () => this.scene.restart(),
+          onSaveTransfer: (mode) => this.openSaveTransfer(mode),
+        }
       );
     });
     // Padding keeps the emoji glyph inside the text canvas — color emoji
@@ -256,7 +261,7 @@ export class MenuScene extends Phaser.Scene {
 
     // Version tag
     this.add
-      .text(width - 8, height - 8, 'v0.2', {
+      .text(width - 8, height - 8, `v${__APP_VERSION__}`, {
         fontSize: '10px',
         color: '#475569',
       })
@@ -273,5 +278,16 @@ export class MenuScene extends Phaser.Scene {
       g.fillStyle(0xffffff, alpha);
       g.fillCircle(x, y, size);
     }
+  }
+
+  /** Opens the DOM save-code overlay for backups / moving progress. */
+  private openSaveTransfer(mode: SaveTransferMode): void {
+    new SaveTransferOverlay(mode, {
+      onImport: (code) => GameState.importSaveCode(code),
+      onImported: () => {
+        Sound.syncMusic(GameState.musicEnabled);
+        this.scene.restart();
+      },
+    });
   }
 }

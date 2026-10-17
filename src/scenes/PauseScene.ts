@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { GameState } from '../core/GameState';
 import { Sound } from '../core/SoundManager';
 import { SettingsModal } from '../ui/SettingsModal';
+import { SaveTransferOverlay, type SaveTransferMode } from '../ui/SaveTransferOverlay';
 import type { GameScene } from './GameScene';
 
 /**
@@ -161,14 +162,34 @@ export class PauseScene extends Phaser.Scene {
 
   private openSettings(): void {
     if (this.settingsModal) return;
-    this.settingsModal = new SettingsModal(this, () => {
-      this.settingsModal = null;
-    });
+    this.settingsModal = new SettingsModal(
+      this,
+      () => {
+        this.settingsModal = null;
+      },
+      { onSaveTransfer: (mode) => this.openSaveTransfer(mode) }
+    );
   }
 
   private quitRun(): void {
     const gameScene = this.scene.get('GameScene') as GameScene;
     this.scene.stop();
     gameScene.quitRun();
+  }
+
+  /**
+   * Save codes from the pause menu: exporting mid-run is harmless, but an
+   * import replaces the save — the current run is abandoned to the menu.
+   */
+  private openSaveTransfer(mode: SaveTransferMode): void {
+    new SaveTransferOverlay(mode, {
+      onImport: (code) => GameState.importSaveCode(code),
+      onImported: () => {
+        Sound.syncMusic(GameState.musicEnabled);
+        this.scene.stop('HUDScene');
+        this.scene.stop('GameScene');
+        this.scene.start('MenuScene');
+      },
+    });
   }
 }

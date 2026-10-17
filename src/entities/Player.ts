@@ -3,6 +3,62 @@ import { PickaxeId } from '../config/pickaxes';
 import { GameState } from '../core/GameState';
 import { SKINS_CONFIG, MinerSkin } from '../config/economy';
 
+/**
+ * Generates the miner character texture for a skin. Shared between the
+ * player entity and the menu screen (which previews the equipped skin).
+ */
+export function ensureMinerSkinTexture(
+  scene: Phaser.Scene,
+  skin: MinerSkin,
+  force: boolean = false
+): void {
+  const key = `miner_character_${skin.id}`;
+
+  if (scene.textures.exists(key)) {
+    if (!force) return;
+    scene.textures.remove(key);
+  }
+
+  const g = scene.make.graphics({ x: 0, y: 0 });
+
+  // Head / Face (skin tone)
+  g.fillStyle(0xfbcfe8, 1);
+  g.fillRect(10, 10, 16, 14);
+
+  // Helmet / Hardhat
+  g.fillStyle(skin.helmetColor, 1);
+  g.fillRect(8, 2, 20, 10);
+  g.fillRect(4, 10, 28, 4); // Helmet brim
+
+  // Headlamp light beam
+  g.fillStyle(0xffffff, 1);
+  g.fillRect(24, 6, 5, 5);
+  g.fillStyle(skin.glowColor, 0.6);
+  g.fillCircle(26, 8, 8);
+
+  // Eyes
+  g.fillStyle(0x0f172a, 1);
+  g.fillRect(20, 14, 3, 4);
+
+  // Body / Suit
+  g.fillStyle(skin.suitColor, 1);
+  g.fillRect(8, 24, 20, 14);
+
+  // Belt
+  g.fillStyle(0x78350f, 1);
+  g.fillRect(8, 36, 20, 3);
+  g.fillStyle(0xfacc15, 1);
+  g.fillRect(16, 36, 4, 3);
+
+  // Legs / Boots
+  g.fillStyle(0x1e293b, 1);
+  g.fillRect(9, 39, 8, 9);
+  g.fillRect(19, 39, 8, 9);
+
+  g.generateTexture(key, 36, 48);
+  g.destroy();
+}
+
 export class Player extends Phaser.GameObjects.Container {
   public gridX: number = 3;
   public gridY: number = 0;
@@ -62,52 +118,7 @@ export class Player extends Phaser.GameObjects.Container {
    * Generates a miner character texture with the given skin colors
    */
   private generateMinerTexture(skin: MinerSkin): void {
-    const scene = this.scene;
-    const key = `miner_character_${skin.id}`;
-
-    // Destroy existing texture if it exists
-    if (scene.textures.exists(key)) {
-      scene.textures.remove(key);
-    }
-
-    const g = scene.make.graphics({ x: 0, y: 0 });
-
-    // Head / Face (skin tone)
-    g.fillStyle(0xfbcfe8, 1);
-    g.fillRect(10, 10, 16, 14);
-
-    // Helmet / Hardhat
-    g.fillStyle(skin.helmetColor, 1);
-    g.fillRect(8, 2, 20, 10);
-    g.fillRect(4, 10, 28, 4); // Helmet brim
-
-    // Headlamp light beam
-    g.fillStyle(0xffffff, 1);
-    g.fillRect(24, 6, 5, 5);
-    g.fillStyle(skin.glowColor, 0.6);
-    g.fillCircle(26, 8, 8);
-
-    // Eyes
-    g.fillStyle(0x0f172a, 1);
-    g.fillRect(20, 14, 3, 4);
-
-    // Body / Suit
-    g.fillStyle(skin.suitColor, 1);
-    g.fillRect(8, 24, 20, 14);
-
-    // Belt
-    g.fillStyle(0x78350f, 1);
-    g.fillRect(8, 36, 20, 3);
-    g.fillStyle(0xfacc15, 1);
-    g.fillRect(16, 36, 4, 3);
-
-    // Legs / Boots
-    g.fillStyle(0x1e293b, 1);
-    g.fillRect(9, 39, 8, 9);
-    g.fillRect(19, 39, 8, 9);
-
-    g.generateTexture(key, 36, 48);
-    g.destroy();
+    ensureMinerSkinTexture(this.scene, skin, true);
   }
 
   /**

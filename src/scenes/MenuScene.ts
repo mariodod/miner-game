@@ -1,6 +1,8 @@
 import Phaser from 'phaser';
 import { GameState } from '../core/GameState';
 import { Sound } from '../core/SoundManager';
+import { SKINS_CONFIG } from '../config/economy';
+import { ensureMinerSkinTexture } from '../entities/Player';
 import { SettingsModal } from '../ui/SettingsModal';
 
 export class MenuScene extends Phaser.Scene {
@@ -39,6 +41,24 @@ export class MenuScene extends Phaser.Scene {
     ground.fillStyle(0x64748b, 1);
     ground.fillRect(0, height * 0.62 + 8, width, height);
 
+    // Idle miner on the surface, wearing the equipped skin
+    const equippedSkin =
+      SKINS_CONFIG.find((s) => s.id === GameState.equippedSkin) || SKINS_CONFIG[0];
+    ensureMinerSkinTexture(this, equippedSkin);
+    const minerY = height * 0.62 - 29;
+    this.add.circle(58, minerY, 44, equippedSkin.glowColor, 0.13);
+    const minerSprite = this.add
+      .sprite(58, minerY, `miner_character_${equippedSkin.id}`)
+      .setScale(1.2);
+    this.tweens.add({
+      targets: minerSprite,
+      y: minerY + 3,
+      duration: 1600,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
+
     // Title
     const title = this.add
       .text(width / 2, height * 0.22, '⛏️', { fontSize: '52px' })
@@ -71,14 +91,35 @@ export class MenuScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    // High Score
+    // Best Depth badge pill
     if (GameState.highScoreDepth > 0) {
-      this.add
+      const badgeText = this.add
         .text(width / 2, height * 0.47, `🏆 Best Depth: ${GameState.highScoreDepth}m`, {
-          fontSize: '13px',
+          fontSize: '12px',
+          fontStyle: 'bold',
           color: '#fcd34d',
         })
-        .setOrigin(0.5);
+        .setOrigin(0.5)
+        .setDepth(1);
+      const badgeBg = this.add.graphics();
+      const badgeW = badgeText.width + 26;
+      const badgeH = 26;
+      badgeBg.fillStyle(0x78350f, 1);
+      badgeBg.fillRoundedRect(
+        width / 2 - badgeW / 2,
+        height * 0.47 - badgeH / 2,
+        badgeW,
+        badgeH,
+        badgeH / 2
+      );
+      badgeBg.lineStyle(1.5, 0xf59e0b, 0.9);
+      badgeBg.strokeRoundedRect(
+        width / 2 - badgeW / 2,
+        height * 0.47 - badgeH / 2,
+        badgeW,
+        badgeH,
+        badgeH / 2
+      );
     }
 
     // ── Play Button ──
@@ -110,6 +151,7 @@ export class MenuScene extends Phaser.Scene {
       this.tweens.add({ targets: [btnBg, btnText], scale: 1.0, duration: 80 });
     });
     btnBg.on('pointerdown', () => {
+      GameState.haptic('tap');
       if (GameState.soundEnabled) Sound.play('ui_click');
       this.tweens.add({
         targets: [btnBg, btnText],
@@ -134,8 +176,15 @@ export class MenuScene extends Phaser.Scene {
       useHandCursor: true,
     });
     shopBg.on('pointerdown', () => {
+      GameState.haptic('tap');
       if (GameState.soundEnabled) Sound.play('ui_click');
-      this.scene.start('ShopScene');
+      this.tweens.add({
+        targets: [shopBg, shopText],
+        scale: 0.94,
+        duration: 60,
+        yoyo: true,
+        onComplete: () => this.scene.start('ShopScene'),
+      });
     });
 
     const shopText = this.add
@@ -152,21 +201,29 @@ export class MenuScene extends Phaser.Scene {
       this.tweens.add({ targets: [shopBg, shopText], scale: 1.0, duration: 80 });
     });
 
-    // Currency row
-    this.add
-      .text(width / 2, height * 0.84, `💰 ${GameState.gold}   💎 ${GameState.diamonds}`, {
-        fontSize: '15px',
+    // Currency pill (top-left, mirrors the shop header)
+    const currency = this.add
+      .text(24, 28, `💰 ${GameState.gold}   💎 ${GameState.diamonds}`, {
+        fontSize: '12px',
+        fontStyle: 'bold',
         color: '#e2e8f0',
-        backgroundColor: '#0f172a',
-        padding: { x: 12, y: 6 },
       })
-      .setOrigin(0.5);
+      .setOrigin(0, 0.5)
+      .setDepth(1);
+    const currencyBg = this.add.graphics();
+    const cw = currency.width + 24;
+    const ch = 24;
+    currencyBg.fillStyle(0x1e293b, 1);
+    currencyBg.fillRoundedRect(12, 28 - ch / 2, cw, ch, ch / 2);
+    currencyBg.lineStyle(1, 0x334155, 1);
+    currencyBg.strokeRoundedRect(12, 28 - ch / 2, cw, ch, ch / 2);
 
     // ── Settings Button (top-right) ──
     const gearBg = this.add.circle(width - 28, 28, 18, 0x1e293b, 0.92);
     gearBg.setStrokeStyle(1.5, 0x64748b);
     gearBg.setInteractive({ useHandCursor: true });
     gearBg.on('pointerdown', () => {
+      GameState.haptic('tap');
       if (GameState.soundEnabled) Sound.play('ui_click');
       if (this.settingsModal) return;
       this.settingsModal = new SettingsModal(

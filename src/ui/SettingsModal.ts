@@ -363,7 +363,7 @@ export class SettingsModal {
 
     this.objects.push(
       scene.add
-        .text(panelX + 22, y, '💾 Save Transfer', { fontSize: '14px', color: '#e2e8f0' })
+        .text(panelX + 22, y, '💾 Save Data', { fontSize: '14px', color: '#e2e8f0' })
         .setOrigin(0, 0.5)
         .setScrollFactor(0)
         .setAlpha(0)

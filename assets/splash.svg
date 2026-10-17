@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2732" height="2732" viewBox="0 0 2732 2732">
+  <!-- Splash: dark backdrop matching the app shell (#1a1423) with a soft
+       amber glow and the pickaxe mark centered. -->
+  <rect width="2732" height="2732" fill="#1a1423"/>
+  <circle cx="1366" cy="1366" r="760" fill="#f59e0b" opacity="0.05"/>
+  <circle cx="1366" cy="1366" r="520" fill="#f59e0b" opacity="0.05"/>
+  <g transform="translate(1366 1366) scale(1.6) translate(-256 -256)">
+    <g transform="rotate(45 256 256)">
+      <rect x="238" y="96" width="36" height="320" rx="18" fill="#b45309"/>
+      <path d="M112 152 q144 -76 288 0 l0 48 q-144 -62 -288 0 z" fill="#cbd5e1"/>
+    </g>
+    <circle cx="136" cy="392" r="30" fill="#facc15"/>
+    <circle cx="392" cy="128" r="22" fill="#22d3ee"/>
+  </g>
+</svg>

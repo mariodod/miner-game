@@ -22,8 +22,13 @@
     "phaser": "^3.80.1"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
     "@capacitor/cli": "^8.5.3",
     "typescript": "^5.4.5",
     "vite": "^5.4.11"
+  },
+  "allowScripts": {
+    "esbuild@0.21.5": true,
+    "sharp@0.32.6": true
   }
 }

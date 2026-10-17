@@ -1,0 +1,25 @@
+{
+  "name": "Pocket Miner",
+  "short_name": "Pocket Miner",
+  "description": "A mobile-first pixel mining game. Dig deep, loot treasure, fight cave critters and upgrade your gear.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#1a1423",
+  "theme_color": "#1a1423",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
